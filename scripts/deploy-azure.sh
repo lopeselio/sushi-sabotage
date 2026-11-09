@@ -45,7 +45,7 @@ KEYS=$(node -e '
   process.stdout.write(JSON.stringify(out));' "$CONTRACT" "$REFEREE")
 
 az containerapp env show -g "$RG" -n "$ENV_NAME" -o none 2>/dev/null || az containerapp env create -g "$RG" -n "$ENV_NAME" -l "$LOC" -o none
-ENVS=(NEAR_NETWORK=testnet "CONTRACT_ID=$CONTRACT" "REFEREE_ID=$REFEREE" "NEARAI_BASE_URL=${NEARAI_BASE_URL:-https://cloud-api.near.ai/v1}" "NEARAI_MODEL=${NEARAI_MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}" NEAR_KEYS=secretref:near-keys NEARAI_API_KEY=secretref:nearai-key SESSION_SECRET=secretref:session-secret)
+ENVS=(NEAR_NETWORK=testnet DATA_DIR=/data "CONTRACT_ID=$CONTRACT" "REFEREE_ID=$REFEREE" "NEARAI_BASE_URL=${NEARAI_BASE_URL:-https://cloud-api.near.ai/v1}" "NEARAI_MODEL=${NEARAI_MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}" NEAR_KEYS=secretref:near-keys NEARAI_API_KEY=secretref:nearai-key SESSION_SECRET=secretref:session-secret)
 if az containerapp show -g "$RG" -n "$APP" -o none 2>/dev/null; then
   az containerapp secret set -g "$RG" -n "$APP" --secrets "near-keys=$KEYS" "nearai-key=${NEARAI_API_KEY:-none}" "session-secret=${SESSION_SECRET:?set SESSION_SECRET in .env}" -o none
   az containerapp update -g "$RG" -n "$APP" --image "$IMAGE" --set-env-vars "${ENVS[@]}" -o none
