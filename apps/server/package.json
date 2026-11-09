@@ -12,10 +12,14 @@
     "e2e": "tsx --env-file-if-exists=../../.env src/e2e-player.ts"
   },
   "dependencies": {
+    "@better-auth/core": "1.7.18",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
     "@sushi/rules": "workspace:*",
+    "better-auth": "1.7.18",
+    "better-near-auth": "1.10.2",
     "near-api-js": "7.4.0",
+    "near-kit": "0.14.0",
     "tsx": "4.20.6",
     "ws": "8.18.3"
   },

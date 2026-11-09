@@ -10,6 +10,10 @@ export const config = {
   rpcUrl: env('NEAR_RPC_URL', 'https://test.rpc.fastnear.com'),
   contract: env('CONTRACT_ID', 'sushi-sabotage.testnet'),
   referee: env('REFEREE_ID', 'sushi-sabotage-ref.testnet'),
+  /** pays gas for players' meta-transactions (NEP-366), relayed by better-near-auth */
+  relayer: env('RELAYER_ID', 'sushi-sabotage-relay.testnet'),
+  /** other origins allowed to talk to the auth endpoints (comma-separated) */
+  extraOrigins: env('EXTRA_ORIGINS').split(',').map((x) => x.trim()).filter(Boolean),
   /** turn chain writes off (local play with no keys) */
   chainEnabled: env('CHAIN', '1') !== '0',
   webDist: env('WEB_DIST', join(import.meta.dirname, '../../web/dist')),
