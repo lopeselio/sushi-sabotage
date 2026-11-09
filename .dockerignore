@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+**/dist
+contracts/kitchen/target
+data
+.env
+.git
+KitchenChaos_Multiplayer_126_FinalGame
+tools/blender/previews
