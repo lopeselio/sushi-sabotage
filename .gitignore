@@ -1,0 +1,13 @@
+node_modules/
+dist/
+target/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+coverage/
+*.blend1
+# design reference only (third-party course project); never published
+KitchenChaos_Multiplayer_126_FinalGame/
+data/
