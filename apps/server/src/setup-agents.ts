@@ -32,12 +32,16 @@ for (const a of ALL_AGENTS) {
   } else console.log(`${acct} exists`);
 
   let chef = await view<string | null>('chef_of', { account_id: acct });
-  if (!chef || !(await view('get_agent', { account_id: acct }))) {
+  const policy = await view<{ day_cap: number; match_cap: number } | null>('get_agent', { account_id: acct });
+  // (re-)register when missing or when the caps in agents.ts changed
+  if (!chef || !policy || policy.day_cap !== DAY_CAP || policy.match_cap !== MATCH_CAP) {
     const r = await call<string>(OWNER, 'register_agent', { account: acct, name: a.name, day_cap: DAY_CAP, match_cap: MATCH_CAP });
     chef = r.value;
     console.log(`registered ${a.name} as ${chef} (caps ${DAY_CAP}/day, ${MATCH_CAP}/match) ${r.tx}`);
   }
-  if (a.skill) {
+  const tok = await view<{ kind: { Chef?: { approved_fee: number } } } | null>('get_token', { token_id: chef });
+  if (a.skill && tok?.kind.Chef?.approved_fee !== MATCH_CAP) {
+    // each agent call spends its key's fixed gas allowance, so only when it's needed
     const r = await call(acct, 'approve_referee', { chef, max_fee: MATCH_CAP });
     console.log(`${a.name} approved entry fees up to ${MATCH_CAP} ${r.tx}`);
   }
