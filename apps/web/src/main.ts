@@ -104,20 +104,26 @@ async function solo(rivals: number): Promise<void> {
     scene.overview = false;
     countdown(() => {
       shift = new SoloShift(scene, r.setup as never, hud, async ({ state, log }) => {
-        setTimeout(() => void soloEnd(r.matchId, state, log), 900);
+        setTimeout(() => void soloEnd(r.matchId, state, log, r.ranked), 900);
       });
     }, r.line);
   } catch (e) { toast((e as Error).message, 'bad'); }
 }
 
-async function soloEnd(matchId: string, state: State, log: LogEntry[]): Promise<void> {
+async function soloEnd(matchId: string, state: State, log: LogEntry[], ranked: boolean): Promise<void> {
   stopShift();
   scene.overview = true;
+  const names = state.chefs.map((c) => c.name);
+  const hits = state.sab.map((x, k) => ({ x, k })).filter(({ x }) => x.target === 0 && x.card !== 'bamboo_shield').map(({ x, k }) => ({ sab: k, card: x.card, tick: x.tick, blocked: x.blocked }));
+  const accusations = await new Promise<{ sab: number; accused: number }[]>((resolve) => {
+    if (!hits.length) { resolve([]); return; }
+    whodunitPanel({ hits, until: Date.now() + 30_000, names }, 0, resolve,
+      ranked ? 'Ranked solo: your browser ran the sim, so your guesses are for fun and don’t score. The AI chefs’ guesses do.' : 'Who hit you? Right: +40 to you, −40 to them. Wrong: −10.');
+  });
   mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Shift over!'), h('p', {}, 'The referee is re-running your shift to check it…')));
   try {
-    const r = await api<ResultsMsg>('/solo/finish', { matchId, log, stateHash: stateHash(state) });
-    // in solo your browser ran the sim, so guesses are just for fun — the reveal shows the truth
-    results({ ...r, txs: [], names: state.chefs.map((c) => c.name), you: 0, solo: true });
+    const r = await api<ResultsMsg>('/solo/finish', { matchId, log, stateHash: stateHash(state), accusations });
+    results({ ...r, txs: [], names, you: 0, solo: true });
     pollTxs(matchId);
   } catch (e) { toast((e as Error).message, 'bad'); title(); }
 }
@@ -173,13 +179,18 @@ function lobby(sock: WebSocket, m: LobbyMsg): void {
 interface WhoMsg { hits: { sab: number; card: Card; tick: number; blocked: boolean }[]; until: number; names: string[] }
 function whodunit(sock: WebSocket, m: WhoMsg, you: number): void {
   if (!m.hits.length) { mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Whodunit'), h('p', {}, 'Nobody sabotaged you this shift. Waiting for the others to accuse…'))); return; }
+  whodunitPanel(m, you, (list) => { sock.send(JSON.stringify({ t: 'accuse', list })); mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Accusations sealed'), h('p', {}, 'Waiting for the reveal…'))); });
+}
+
+/** The accusation screen, shared by multiplayer (sent over the socket) and solo (sent with the log). */
+function whodunitPanel(m: WhoMsg, you: number, submit: (list: { sab: number; accused: number }[]) => void, note?: string): void {
   const picks = new Map<number, number>();
-  const send = (): void => { sock.send(JSON.stringify({ t: 'accuse', list: [...picks].map(([sab, accused]) => ({ sab, accused })) })); mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Accusations sealed'), h('p', {}, 'Waiting for the reveal…'))); };
+  const send = (): void => submit([...picks].map(([sab, accused]) => ({ sab, accused })));
   const timer = h('span', { class: 'dim' });
   const iv = setInterval(() => { const s = Math.max(0, Math.ceil((m.until - Date.now()) / 1000)); timer.textContent = `${s}s`; if (s <= 0) clearInterval(iv); }, 250);
   mount(ui, h('div', { class: 'panel' },
     h('h2', {}, 'Whodunit? ', timer),
-    h('p', { class: 'dim' }, 'For each sabotage that hit you, name the culprit. Right: +40 to you, −40 to them. Wrong: −10. The seals open onchain next.'),
+    h('p', { class: 'dim' }, note ?? 'For each sabotage that hit you, name the culprit. Right: +40 to you, −40 to them. Wrong: −10. The seals open onchain next.'),
     h('div', { class: 'hits' }, ...m.hits.map((x) => h('div', { class: 'hit' },
       h('b', {}, CARD_INFO[x.card].name), h('small', {}, ` at ${Math.floor(x.tick / 20)}s${x.blocked ? ' (blocked)' : ''}`),
       h('div', { class: 'seg' }, ...m.names.map((n, i) => (i === you ? null : h('button', { onclick: (e: Event) => { picks.set(x.sab, i); [...(e.target as HTMLElement).parentElement!.children].forEach((b) => b.classList.remove('on')); (e.target as HTMLElement).classList.add('on'); } }, n))), h('button', { class: 'on', onclick: (e: Event) => { picks.delete(x.sab); [...(e.target as HTMLElement).parentElement!.children].forEach((b) => b.classList.remove('on')); (e.target as HTMLElement).classList.add('on'); } }, 'pass'))))),
@@ -205,7 +216,7 @@ function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean 
         a ? h('span', { class: a.accused === x.caster ? 'good' : 'bad' }, ` — ${r.names[a.victim]} accused ${r.names[a.accused]}${a.accused === x.caster ? ' ✓' : ' ✗'}`) : null);
     })) : h('p', { class: 'dim' }, 'Nobody played a card.'),
     r.solo ? h('p', { class: r.verified ? 'good' : 'bad' }, r.verified ? `✓ The referee re-ran your shift from the input log and reached the same state (${r.stateHash?.slice(0, 12)}…).` : '✗ The referee’s replay did not match your browser; the referee’s result stands.') : null,
-    r.solo ? h('p', { class: 'dim' }, 'Solo: your browser ran the sim, so only the AI chefs’ accusations score. In multiplayer the server never tells anyone who cast what.') : null,
+    r.solo ? h('p', { class: 'dim' }, r.ranked ? 'Ranked solo: your browser ran the sim, so only the AI chefs’ accusations score. In multiplayer the server never tells anyone who cast what.' : 'Solo, unranked: your accusations scored. In multiplayer the server never tells anyone who cast what.') : null,
     h('div', { class: 'proof', id: 'proof' }, proofLinks(r)),
     h('div', { class: 'row' }, h('button', { class: 'big', onclick: title }, 'Back to the kitchen'), h('a', { class: 'btn ghost', href: `/api/match/${r.matchId}`, target: '_blank' }, 'Proof bundle (JSON)'))));
 }
