@@ -82,7 +82,11 @@ export class KitchenScene {
   }
 
   private lights(): void {
-    this.scene.add(new THREE.HemisphereLight(0x8a7fc0, 0x1a1020, 0.55));
+    this.scene.add(new THREE.HemisphereLight(0xa99be0, 0x2a1c30, 1.0));
+    // a warm key light so the stalls read clearly at night
+    const key = new THREE.DirectionalLight(0xffd9a8, 0.6);
+    key.position.set(6, 12, 20);
+    this.scene.add(key);
     const moon = new THREE.DirectionalLight(0xbfc8ff, 1.1);
     moon.position.set(-8, 18, 6);
     moon.castShadow = true;
@@ -162,8 +166,8 @@ export class KitchenScene {
       l.position.set(x, 2.6, POD_H + 0.4);
       group.add(l);
     }
-    const lamp = new THREE.PointLight(0xffa860, 14, 9, 1.6);
-    lamp.position.set(POD_W / 2, 3.2, POD_H / 2 + 1);
+    const lamp = new THREE.PointLight(0xffa860, 10, 14, 1.2);
+    lamp.position.set(POD_W / 2, 5.5, POD_H / 2 + 1.5);
     group.add(lamp);
     const noren = this.model('noren');
     noren.position.set(POD_W / 2, 0.6, -0.6);
@@ -245,7 +249,7 @@ export class KitchenScene {
     if (key !== ch.heldKey) {
       if (ch.held) ch.root.remove(ch.held);
       ch.held = c.held ? itemObject(c.held) : null;
-      if (ch.held) { ch.held.position.set(0, 0.7, 0.42); ch.root.add(ch.held); }
+      if (ch.held) { ch.held.position.set(0, 1.32, 0); ch.held.scale.setScalar(1.25); ch.root.add(ch.held); }
       ch.heldKey = key;
     }
     ch.label.lookAt(this.camera.position);
@@ -335,7 +339,7 @@ export class KitchenScene {
     } else {
       const o = podOrigin(this.you);
       target = new THREE.Vector3(o.x + POD_W / 2 + (you.chef.px - POD_W / 2) * 0.25, 0, o.z + POD_H / 2 + (you.chef.pz - POD_H / 2) * 0.2);
-      pos = target.clone().add(new THREE.Vector3(0, 10.5, 8));
+      pos = target.clone().add(new THREE.Vector3(0, 8.4, 6.6));
     }
     const k = Math.min(1, dt * 4);
     this.camTarget.lerp(target, k);
