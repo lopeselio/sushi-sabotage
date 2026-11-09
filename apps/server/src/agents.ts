@@ -21,7 +21,7 @@ export const SCOUT: AgentDef = { label: 'scout', name: 'Scout Nori', persona: 'S
 export const ALL_AGENTS = [...CHEF_AGENTS, FIXER, SCOUT];
 
 export const accountOf = (a: AgentDef): string => `${a.label}.${config.contract}`;
-export const DAY_CAP = 60;
+export const DAY_CAP = 150;
 export const MATCH_CAP = 10;
 
 const chefIds = new Map<string, string>();
@@ -121,7 +121,11 @@ export async function agentEconomyTick(): Promise<void> {
         // each chef has a favourite card; buy it if the price fits the budget
         const favourite: Card = (['wasabi_bomb', 'fish_swap', 'order_shuffle', 'soy_slick'] as Card[])[CHEF_AGENTS.indexOf(a)];
         const price = prices()[favourite];
-        if (t.purse >= price + MATCH_CAP && price <= 30) {
+        // keep enough of today's budget for three league entries
+        const policy = await view<{ day: number; spent_today: number; day_cap: number } | null>('get_agent', { account_id: acct }).catch(() => null);
+        const spent = policy && policy.day === day ? policy.spent_today : 0;
+        const room = (policy?.day_cap ?? DAY_CAP) - spent - 3 * MATCH_CAP;
+        if (t.purse >= price + 3 * MATCH_CAP && price <= 30 && price <= room) {
           const { offerId } = await fixerOffer(chef, favourite, price);
           const r = await call(acct, 'accept_offer', { offer_id: offerId });
           logAct(a.name, `bought ${CARD_INFO[favourite].name} from the Fixer for ${price} ryo`, r.tx);
