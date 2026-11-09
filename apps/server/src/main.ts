@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { CARDS, SHIFT_TICKS, replay, stateHash, type Card, type LogEntry } from '@sushi/rules';
+import { CARDS, SHIFT_TICKS, replay, stateHash, validAccusations, type Card, type LogEntry } from '@sushi/rules';
 import { ALL_AGENTS, CHEF_AGENTS, FIXER, accountOf, agentChef, agentEconomyTick, fixerOffer, haggleWithFixer, prices, recentActs, taunt } from './agents.ts';
 import { challenge, sessionAccount, verifySignIn, type SignedMessage } from './auth.ts';
 import { view } from './chain.ts';
@@ -68,7 +68,7 @@ async function soloStart(account: string | null, name: string, bots: number, loa
   return { matchId: match.id, setup, you: 0, ranked: planned.fee > 0, fee: planned.fee, seedHash: match.rec.seedHash, line: line ? { who: line.who, text: line.text, signed: !!line.signature } : null };
 }
 
-async function soloFinish(matchId: string, log: LogEntry[], clientHash: string) {
+async function soloFinish(matchId: string, log: LogEntry[], clientHash: string, mine: { sab: number; accused: number }[]) {
   const run = solos.get(matchId);
   if (!run) throw new Error('no such solo shift (or it expired)');
   solos.delete(matchId);
@@ -79,8 +79,12 @@ async function soloFinish(matchId: string, log: LogEntry[], clientHash: string) 
   run.match.rec.log = clean;
   // the referee's replay must land on the exact state the browser ended in
   const verified = stateHash(s) === clientHash;
-  // in solo your browser knew the culprits, so only the bots' accusations are scored
+  // your browser ran the sim and could know the culprits: your own accusations count only in
+  // unranked shifts, where nothing is at stake; the bots' always count
   const acc = run.match.botAccusations(s);
+  if (!run.match.rec.ranked) {
+    acc.push(...validAccusations(s, (Array.isArray(mine) ? mine : []).slice(0, 64).map((a) => ({ victim: run.you, sab: Number(a.sab), accused: Number(a.accused) }))));
+  }
   const { results, settled } = run.match.finish(s, acc);
   const reveal = s.sab.map((x) => ({ caster: x.caster, target: x.target, card: x.card, tick: x.tick, blocked: x.blocked, fizzled: x.fizzled }));
   void settled;
@@ -123,8 +127,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return json(res, 200, await soloStart(me, cleanName(b.name), Math.max(1, Math.min(3, Number(b.bots ?? 3))), Array.isArray(b.loadout) ? b.loadout.map(Number) : []));
     }
     if (p === '/api/solo/finish' && req.method === 'POST') {
-      const b = await body<{ matchId: string; log: LogEntry[]; stateHash?: string }>(req);
-      return json(res, 200, await soloFinish(String(b.matchId), b.log, String(b.stateHash ?? '')));
+      const b = await body<{ matchId: string; log: LogEntry[]; stateHash?: string; accusations?: { sab: number; accused: number }[] }>(req);
+      return json(res, 200, await soloFinish(String(b.matchId), b.log, String(b.stateHash ?? ''), b.accusations ?? []));
     }
     if (p === '/api/market') return json(res, 200, { prices: prices(), fixer: await agentChef(FIXER), cards: CARDS });
     if (p === '/api/market/haggle' && req.method === 'POST') {
