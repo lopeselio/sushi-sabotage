@@ -11,3 +11,4 @@ coverage/
 # design reference only (third-party course project); never published
 KitchenChaos_Multiplayer_126_FinalGame/
 data/
+__pycache__/
