@@ -1,0 +1,25 @@
+{
+  "name": "@sushi/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "tsx --env-file-if-exists=../../.env src/main.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run --passWithNoTests",
+    "setup:agents": "tsx --env-file-if-exists=../../.env src/setup-agents.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
+    "@sushi/rules": "workspace:*",
+    "near-api-js": "7.4.0",
+    "tsx": "4.20.6",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "@types/ws": "8.18.1"
+  }
+}
