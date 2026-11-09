@@ -11,9 +11,11 @@
     "test": "echo 'web: covered by rules tests'"
   },
   "dependencies": {
-    "@hot-labs/near-connect": "0.11.4",
+    "@better-auth/core": "1.7.18",
     "@sushi/rules": "workspace:*",
-    "function-call-key-plugin": "2.1.0",
+    "better-auth": "1.7.18",
+    "better-near-auth": "1.10.2",
+    "near-kit": "0.14.0",
     "three": "0.186.1"
   },
   "devDependencies": {
