@@ -11,6 +11,7 @@ import { ChainMatch, planSeats, soloBots, type SeatPlan } from './match.ts';
 import { attestation } from './nearai.ts';
 import { Room } from './room.ts';
 import { startLeague } from './league.ts';
+import { chainStatus } from './status.ts';
 import { loadMatch, recentMatches } from './store.ts';
 
 // ---------- tiny HTTP helpers ----------
@@ -95,6 +96,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const me = sessionAccount(bearer(req));
   try {
     if (p === '/api/health') return json(res, 200, { ok: true, version: process.env.APP_VERSION ?? 'dev' });
+    if (p === '/api/status') {
+      const accounts = config.chainEnabled ? await chainStatus() : [];
+      return json(res, 200, { version: process.env.APP_VERSION ?? 'dev', chain: config.chainEnabled, warnings: accounts.filter((a) => a.low).map((a) => a.account), accounts });
+    }
     if (p === '/api/config') {
       return json(res, 200, {
         network: config.network, contract: config.contract, referee: config.referee, chain: config.chainEnabled,
