@@ -1,0 +1,12 @@
+{
+  "name": "@sushi/verify",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "tsx src/verify.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "echo 'verify: exercised by pnpm verify'"
+  },
+  "dependencies": { "@sushi/rules": "workspace:*", "tsx": "4.20.6" }
+}
