@@ -165,10 +165,11 @@ def chef():
         sphere(f"eye{x}", 0.03, (x, -0.215, 0.95), mat("Eye", DARK, rough=0.2))
     sphere("cheekL", 0.035, (-0.14, -0.19, 0.88), mat("Cheek", (0.95, 0.5, 0.45)))
     sphere("cheekR", 0.035, (0.14, -0.19, 0.88), mat("Cheek", (0.95, 0.5, 0.45)))
-    for x in (-0.33, 0.33):
-        sphere(f"hand{x}", 0.08, (x, -0.1, 0.5), mat("Skin", SKIN, rough=0.7))
-    for x in (-0.12, 0.12):
-        cyl(f"foot{x}", 0.08, 0.1, (x, 0, 0.05), mat("Shoe", DARK), verts=16)
+    # named so the game can animate them (walk, carry, chop)
+    for x, side in ((-0.33, "L"), (0.33, "R")):
+        sphere(f"hand{side}", 0.08, (x, -0.1, 0.5), mat("Skin", SKIN, rough=0.7))
+    for x, side in ((-0.12, "L"), (0.12, "R")):
+        cyl(f"foot{side}", 0.08, 0.1, (x, 0, 0.05), mat("Shoe", DARK), verts=16)
     preview("chef", dist=2.4, height=0.9, target=(0, 0, 0.6))
     export("chef")
 
