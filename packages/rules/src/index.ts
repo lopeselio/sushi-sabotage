@@ -5,3 +5,4 @@ export * from './hash.ts';
 export * from './sim.ts';
 export * from './bot.ts';
 export * from './market.ts';
+export * from './hint.ts';

@@ -220,3 +220,15 @@ describe('market', () => {
     expect(haggle(100, 50, 1).kind).toBe('refuse');
   });
 });
+
+describe('hints', () => {
+  it('walks a new chef through the first steps', async () => {
+    const { nextStep } = await import('../src/hint.ts');
+    const s = solo();
+    step(s);
+    const first = nextStep(s, 0)!;
+    expect(first.text).toMatch(/plate/i);
+    s.chefs[0].held = { k: 'rice_raw' };
+    expect(nextStep(s, 0)!.text).toBe('Put the raw rice in the rice cooker');
+  });
+});
