@@ -70,6 +70,8 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .mischief { display: flex; flex-direction: column; gap: 4px; align-items: center; background: var(--panel); padding: 8px; border-radius: 10px; font-size: 11px; color: var(--dim); }
 .mischief i { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--lantern); margin: 1px; }
 .mischief i.on { background: var(--lantern); box-shadow: 0 0 8px var(--lantern); }
+.hint { position: absolute; top: 92px; left: 50%; transform: translateX(-50%); background: rgba(255, 210, 63, 0.95); color: #2a1a00; font-weight: 800; padding: 8px 16px; border-radius: 99px; font-size: 15px; box-shadow: 0 0 20px rgba(255, 190, 40, 0.5); }
+.hint:empty { display: none; }
 .held { position: absolute; bottom: 92px; left: 12px; background: var(--panel); padding: 6px 10px; border-radius: 10px; font-size: 13px; }
 .held:empty { display: none; }
 .keys { position: absolute; bottom: 92px; right: 12px; font-size: 11px; color: var(--dim); background: var(--panel); padding: 6px 10px; border-radius: 10px; }

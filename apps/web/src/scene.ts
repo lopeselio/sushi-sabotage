@@ -39,6 +39,9 @@ export class KitchenScene {
   private models = new Map<string, THREE.Object3D>();
   private pods: PodView[] = [];
   private particles: Particle[] = [];
+  private hint: THREE.Mesh;
+  private hintCounter = -1;
+  private hintT = 0;
   private camTarget = new THREE.Vector3();
   private camPos = new THREE.Vector3();
   overview = false;
@@ -52,14 +55,18 @@ export class KitchenScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.12;
     this.scene.background = new THREE.Color(0x120d1c);
     this.scene.fog = new THREE.Fog(0x120d1c, 18, 48);
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.6, 0.82));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.35, 0.5, 0.92));
     this.composer.addPass(new OutputPass());
     this.lights();
+    this.hint = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 16), new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xff9f00, emissiveIntensity: 0.5 }));
+    this.hint.rotation.x = Math.PI;
+    this.hint.visible = false;
+    this.scene.add(this.hint);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -274,6 +281,12 @@ export class KitchenScene {
 
   // ---------- effects ----------
 
+  /** Point the tutorial arrow at one of your counters (or hide it with -1). */
+  setHint(counter: number): void {
+    this.hintCounter = counter;
+    this.hint.visible = counter >= 0;
+  }
+
   flashPod(i: number): void { const p = this.pods[i]; if (p) p.flashT = 1; }
 
   burst(i: number, counterIdx: number, color: number, n = 10): void {
@@ -305,6 +318,13 @@ export class KitchenScene {
       a.needsUpdate = true;
       (q.p.material as THREE.PointsMaterial).opacity = Math.max(0, 0.9 * (1 - q.life / q.max));
       if (q.life >= q.max) { q.p.parent?.remove(q.p); q.p.geometry.dispose(); this.particles.splice(k, 1); }
+    }
+    if (this.hintCounter >= 0) {
+      this.hintT += dt;
+      const o = podOrigin(this.you);
+      const c = COUNTERS[this.hintCounter];
+      this.hint.position.set(o.x + c.x + 0.5, 1.6 + Math.sin(this.hintT * 5) * 0.1, o.z + c.z + 0.5);
+      this.hint.rotation.y += dt * 2;
     }
     // camera: follow your pod, or show the whole market
     const you = this.pods[this.you];

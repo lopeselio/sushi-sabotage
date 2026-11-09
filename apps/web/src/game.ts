@@ -1,5 +1,5 @@
 import {
-  CARD_INFO, CARDS, ITEM_LABEL, MISCHIEF_MAX, RECIPES, SHIFT_TICKS, TICK_HZ, canCast, createState, moveChef, step,
+  CARD_INFO, CARDS, ITEM_LABEL, MISCHIEF_MAX, RECIPES, SHIFT_TICKS, TICK_HZ, canCast, createState, moveChef, nextStep, step,
   type Card, type Chef, type Input, type LogEntry, type SimEvent, type Setup, type State,
 } from '@sushi/rules';
 import { sfx } from './audio.ts';
@@ -27,6 +27,16 @@ export abstract class Shift {
   private onKeyUp = (e: KeyboardEvent): void => { this.keys.delete(e.code); this.updateMove(); };
   private onBlur = (): void => { this.keys.clear(); this.updateMove(); };
   ended = false;
+  hints = Shift.hintsDefault();
+
+  /** Hints are on for your first three shifts, then off unless you turn them on (H). */
+  static hintsDefault(): boolean {
+    try {
+      const pref = localStorage.getItem('sushi.hints');
+      if (pref) return pref === 'on';
+      return Number(localStorage.getItem('sushi.shifts') ?? 0) < 3;
+    } catch { return true; }
+  }
 
   constructor(protected scene: KitchenScene, protected you: number, protected names: string[], hudRoot: HTMLElement) {
     this.hud = hudRoot;
@@ -60,6 +70,7 @@ export abstract class Shift {
     else if (KEYS_CHOP.includes(e.code)) this.send({ chop: true });
     else if (e.code === 'Tab' || e.code === 'KeyQ') this.cycleTarget();
     else if (e.code === 'KeyV') this.scene.overview = !this.scene.overview;
+    else if (e.code === 'KeyH') { this.hints = !this.hints; try { localStorage.setItem('sushi.hints', this.hints ? 'on' : 'off'); } catch { /* */ } this.hudKey = ''; }
     else if (/^Digit[1-6]$/.test(e.code)) this.playCard(CARDS[Number(e.code.slice(5)) - 1]);
     this.updateMove();
   }
@@ -129,7 +140,13 @@ export abstract class Shift {
     const dt = Math.min(0.1, (t - this.last) / 1000);
     this.last = t;
     this.tickLocal(dt);
-    if (this.state) { this.scene.sync(this.state, dt); this.renderHud(); }
+    if (this.state) {
+      this.scene.sync(this.state, dt);
+      const h = this.hints && !this.state.over ? nextStep(this.state, this.you) : null;
+      this.scene.setHint(h?.counter ?? -1);
+      this.hintText = h?.text ?? '';
+      this.renderHud();
+    }
     this.scene.render(dt);
     this.raf = requestAnimationFrame((x) => this.frame(x));
   }
@@ -138,6 +155,7 @@ export abstract class Shift {
 
   private el: Record<string, HTMLElement> = {};
   private hudKey = '';
+  private hintText = '';
 
   private buildHud(): void {
     this.el.orders = h('div', { class: 'orders' });
@@ -145,8 +163,9 @@ export abstract class Shift {
     this.el.rivals = h('div', { class: 'rivals' });
     this.el.cards = h('div', { class: 'cards' });
     this.el.held = h('div', { class: 'held' });
-    this.el.help = h('div', { class: 'keys' }, 'WASD move · E pick/place · F chop · 1–6 cards · Tab target · V view all');
-    mount(this.hud, this.el.orders, this.el.top, this.el.rivals, this.el.cards, this.el.held, this.el.help, touchPad(this));
+    this.el.help = h('div', { class: 'keys' }, 'WASD move · E pick/place · F chop · 1–6 cards · Tab target · V view all · H hints');
+    this.el.hint = h('div', { class: 'hint' });
+    mount(this.hud, this.el.hint, this.el.orders, this.el.top, this.el.rivals, this.el.cards, this.el.held, this.el.help, touchPad(this));
   }
 
   private renderHud(): void {
@@ -154,7 +173,7 @@ export abstract class Shift {
     const me = s.chefs[this.you];
     const left = SHIFT_TICKS - s.tick;
     // cheap change detection: only rebuild when something visible changed
-    const key = JSON.stringify([Math.ceil(left / 20), me.score, me.streak, me.mischief, me.loadout, me.orders.map((o) => [o.id, Math.ceil((o.due - s.tick) / 20)]), s.chefs.map((c) => c.score), this.target, me.held, me.shield, s.tick < me.cdUntil, s.tick < me.slowUntil, s.tick < me.dullUntil]);
+    const key = JSON.stringify([this.hintText, this.hints, Math.ceil(left / 20), me.score, me.streak, me.mischief, me.loadout, me.orders.map((o) => [o.id, Math.ceil((o.due - s.tick) / 20)]), s.chefs.map((c) => c.score), this.target, me.held, me.shield, s.tick < me.cdUntil, s.tick < me.slowUntil, s.tick < me.dullUntil]);
     if (key === this.hudKey) return;
     this.hudKey = key;
 
@@ -191,12 +210,13 @@ export abstract class Shift {
           h('kbd', {}, String(k + 1)), h('b', {}, info.name), h('small', {}, owned ? `${owned} owned` : `${info.cost} mischief`));
       }),
     );
+    this.el.hint.textContent = this.hints && this.hintText ? `Next: ${this.hintText}` : '';
     this.el.held.textContent = me.held ? `Holding: ${me.held.k === 'plate' ? `plate${me.held.on?.length ? ` (${me.held.on.map((k) => CHIP_LABEL[k] ?? k).join(', ')})` : ''}` : ITEM_LABEL[me.held.k]}` : '';
   }
 }
 
 function touchPad(g: Shift): HTMLElement {
-  if (!matchMedia('(pointer: coarse)').matches) return h('div');
+  if (!matchMedia('(pointer: coarse)').matches && !new URLSearchParams(location.search).has('touch')) return h('div');
   const stick = h('div', { class: 'stick' }, h('i'));
   const knob = stick.firstChild as HTMLElement;
   let id: number | null = null;
@@ -244,7 +264,11 @@ export class SoloShift extends Shift {
       this.pending = {};
       this.events(step(s, [inp]));
     }
-    if (s.over && !this.ended) { this.ended = true; this.onEnd({ state: s, log: this.log }); }
+    if (s.over && !this.ended) {
+      this.ended = true;
+      try { localStorage.setItem('sushi.shifts', String(Number(localStorage.getItem('sushi.shifts') ?? 0) + 1)); } catch { /* */ }
+      this.onEnd({ state: s, log: this.log });
+    }
   }
 }
 
