@@ -77,9 +77,10 @@ export type SimEvent =
   | { t: 'burn'; chef: number; counter: number }
   | { t: 'cooked'; chef: number; counter: number }
   | { t: 'chop'; chef: number; counter: number }
-  | { t: 'pick'; chef: number }
-  | { t: 'place'; chef: number }
-  | { t: 'trash'; chef: number }
+  | { t: 'pick'; chef: number; counter: number }
+  | { t: 'place'; chef: number; counter: number }
+  | { t: 'trash'; chef: number; counter: number }
+  | { t: 'serve'; chef: number; counter: number }
   | { t: 'order'; chef: number; recipe: number }
   | { t: 'cast'; caster: number; target: number; card: Card }
   | { t: 'sabotaged'; caster: number; target: number; card: Card; blocked: boolean; fizzled: boolean }
@@ -278,14 +279,14 @@ function interact(s: State, i: number, ev: SimEvent[]): void {
   const st = c.st[idx];
   switch (counter.type) {
     case 'container':
-      if (!c.held && counter.source) { c.held = { k: counter.source }; ev.push({ t: 'pick', chef: i }); }
+      if (!c.held && counter.source) { c.held = { k: counter.source }; ev.push({ t: 'pick', chef: i, counter: idx }); }
       else if (c.held?.k === 'plate' && counter.source === 'nori_cone' && canAddToPlate(c.held.on!, 'nori_cone')) {
         c.held.on!.push('nori_cone'); // cones need no prep: scoop straight onto a held plate
-        ev.push({ t: 'place', chef: i });
+        ev.push({ t: 'place', chef: i, counter: idx });
       }
       return;
     case 'plates':
-      if (!c.held && c.plates > 0) { c.plates--; c.held = { k: 'plate', on: [] }; ev.push({ t: 'pick', chef: i }); }
+      if (!c.held && c.plates > 0) { c.plates--; c.held = { k: 'plate', on: [] }; ev.push({ t: 'pick', chef: i, counter: idx }); }
       return;
     case 'trash': {
       const h = c.held;
@@ -297,27 +298,27 @@ function interact(s: State, i: number, ev: SimEvent[]): void {
         if (!BURNT.has(h.k) && !isRaw(h.k)) { c.score += SCORE.trash; c.trashed++; }
         c.held = null;
       }
-      ev.push({ t: 'trash', chef: i });
+      ev.push({ t: 'trash', chef: i, counter: idx });
       return;
     }
     case 'delivery':
-      if (c.held?.k === 'plate' && c.held.on!.length) deliver(s, i, c.held, ev);
+      if (c.held?.k === 'plate' && c.held.on!.length) { ev.push({ t: 'serve', chef: i, counter: idx }); deliver(s, i, c.held, ev); }
       return;
     default: {
       // clear counter, board, cooker, pan, pot: place / pick / combine with a plate
       if (!st.item && c.held && accepts(counter.type, c.held)) {
         st.item = c.held; st.p = 0; c.held = null;
-        ev.push({ t: 'place', chef: i });
+        ev.push({ t: 'place', chef: i, counter: idx });
       } else if (st.item && !c.held) {
         c.held = st.item; st.item = null; st.p = 0;
-        ev.push({ t: 'pick', chef: i });
+        ev.push({ t: 'pick', chef: i, counter: idx });
       } else if (st.item && c.held) {
         if (c.held.k === 'plate' && canAddToPlate(c.held.on!, st.item.k)) {
           c.held.on!.push(st.item.k); st.item = null; st.p = 0;
-          ev.push({ t: 'place', chef: i });
+          ev.push({ t: 'place', chef: i, counter: idx });
         } else if (st.item.k === 'plate' && canAddToPlate(st.item.on!, c.held.k)) {
           st.item.on!.push(c.held.k); c.held = null;
-          ev.push({ t: 'place', chef: i });
+          ev.push({ t: 'place', chef: i, counter: idx });
         }
       }
     }
