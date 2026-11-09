@@ -10,6 +10,7 @@ import { config, explorerTx } from './config.ts';
 import { ChainMatch, planSeats, soloBots, type SeatPlan } from './match.ts';
 import { attestation } from './nearai.ts';
 import { Room } from './room.ts';
+import { startLeague } from './league.ts';
 import { loadMatch, recentMatches } from './store.ts';
 
 // ---------- tiny HTTP helpers ----------
@@ -191,5 +192,6 @@ server.listen(config.port, () => {
 if (config.chainEnabled) {
   const loop = (): void => { void agentEconomyTick().catch((e) => console.warn('agent tick:', (e as Error).message)); };
   setTimeout(loop, 5000);
-  setInterval(loop, 4 * 60_000).unref();
+  setInterval(loop, 10 * 60_000).unref();
+  startLeague();
 }
