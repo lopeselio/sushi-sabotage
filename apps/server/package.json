@@ -8,7 +8,8 @@
     "start": "tsx --env-file-if-exists=../../.env src/main.ts",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run --passWithNoTests",
-    "setup:agents": "tsx --env-file-if-exists=../../.env src/setup-agents.ts"
+    "setup:agents": "tsx --env-file-if-exists=../../.env src/setup-agents.ts",
+    "e2e": "tsx --env-file-if-exists=../../.env src/e2e-player.ts"
   },
   "dependencies": {
     "@noble/curves": "2.0.1",
