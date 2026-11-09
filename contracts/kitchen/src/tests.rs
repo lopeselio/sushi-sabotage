@@ -1,6 +1,7 @@
 use super::*;
 use near_sdk::test_utils::{get_logs, VMContextBuilder};
 use near_sdk::testing_env;
+use near_sdk::json_types::U128;
 
 fn acc(s: &str) -> AccountId {
     s.parse().unwrap()
@@ -254,4 +255,69 @@ fn dynamic_metadata_reflects_stats() {
     assert!(t.metadata.media.unwrap().starts_with("data:image/svg+xml,"));
     assert!(t.metadata.extra.unwrap().contains("\"purse\":100"));
     assert_eq!(level_of(50 * 9), 4);
+}
+
+#[test]
+fn royalties_never_take_more_than_their_share() {
+    let mut k = setup();
+    let (_a, _b) = two_chef_match(&mut k);
+    ctx("owner.testnet");
+    k.mint_scroll(0, acc("carol.testnet"));
+    ctx("ref.testnet");
+    // 20 Azure Fin dishes would be 40 ryo of royalties; the pot is 20, scrolls get at most 30% = 6
+    k.settle_match("m1".into(), "seed".into(), vec![], vec![], vec![report(100, vec![0; 20]), report(50, vec![])]);
+    let m = k.get_match("m1".into()).unwrap();
+    assert_eq!(m.royalties, 6);
+    assert_eq!(m.payouts.iter().sum::<u64>(), 14);
+}
+
+fn buy_card(k: &mut Kitchen, buyer_acct: &str, buyer: &str, card: &str) {
+    ctx("fixer.kitchen.testnet");
+    let fixer = k.chef_of(acc("fixer.kitchen.testnet")).unwrap();
+    let id = k.post_offer(fixer, buyer.into(), card.into(), 5, 60);
+    ctx(buyer_acct);
+    k.accept_offer(id);
+}
+
+#[test]
+fn cards_are_nep245_tokens() {
+    let mut k = setup();
+    chef(&mut k, "fixer.kitchen.testnet", "The Fixer");
+    let a = chef(&mut k, "alice.testnet", "Alice");
+    let _b = chef(&mut k, "bob.testnet", "Bob");
+    buy_card(&mut k, "alice.testnet", &a, "soy_slick");
+    buy_card(&mut k, "alice.testnet", &a, "soy_slick");
+    assert!(get_logs().iter().any(|l| l.contains("nep245") && l.contains("mt_mint")));
+    assert_eq!(k.mt_balance_of(acc("alice.testnet"), "soy_slick".into()).0, 2);
+    assert_eq!(k.mt_supply("soy_slick".into()).unwrap().0, 2);
+    ctx_yocto("alice.testnet");
+    k.mt_transfer(acc("bob.testnet"), "soy_slick".into(), U128(1), None, None);
+    assert!(get_logs().iter().any(|l| l.contains("mt_transfer")));
+    assert_eq!(k.mt_batch_balance_of(acc("bob.testnet"), vec!["soy_slick".into(), "fish_swap".into()]).iter().map(|x| x.0).collect::<Vec<_>>(), vec![1, 0]);
+    // using a card in a match burns it
+    ctx("ref.testnet");
+    k.create_match("m3".into(), sha("s"), vec![Seat { chef: Some(a.clone()), name: "Alice".into(), loadout: vec![0, 0, 0, 1, 0, 0] }], 0, false);
+    assert_eq!(k.mt_supply("soy_slick".into()).unwrap().0, 1);
+    assert!(get_logs().iter().any(|l| l.contains("mt_burn")));
+}
+
+#[test]
+#[should_panic(expected = "not enough cards")]
+fn cannot_send_cards_you_dont_have() {
+    let mut k = setup();
+    chef(&mut k, "alice.testnet", "Alice");
+    chef(&mut k, "bob.testnet", "Bob");
+    ctx_yocto("alice.testnet");
+    k.mt_transfer(acc("bob.testnet"), "wasabi_bomb".into(), U128(1), None, None);
+}
+
+#[test]
+#[should_panic(expected = "no chef")]
+fn cards_need_a_chef_to_land_on() {
+    let mut k = setup();
+    chef(&mut k, "fixer.kitchen.testnet", "The Fixer");
+    let a = chef(&mut k, "alice.testnet", "Alice");
+    buy_card(&mut k, "alice.testnet", &a, "dull_knife");
+    ctx_yocto("alice.testnet");
+    k.mt_transfer(acc("nobody.testnet"), "dull_knife".into(), U128(1), None, None);
 }
