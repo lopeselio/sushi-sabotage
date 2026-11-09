@@ -10,7 +10,7 @@ export interface OpeningRec { caster: number; target: number; card: string; tick
 
 export interface MatchRecord {
   id: string;
-  mode: 'solo' | 'room';
+  mode: 'solo' | 'room' | 'league';
   createdAt: number;
   setup: Setup;
   seats: { chef: string | null; name: string; kind: 'human' | 'bot' | 'guest'; account?: string }[];

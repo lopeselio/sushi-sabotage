@@ -23,8 +23,26 @@ interface ChefTokenView { owner_id: string; purse: number; kind: { Chef?: { inve
 
 const newId = (): string => `m-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`;
 
-/** Fill in each seat's chef token, clamp loadouts to real inventory, and pick ranked/fee. */
-export async function planSeats(seats: SeatPlan[]): Promise<{ seats: SeatPlan[]; fee: number }> {
+interface AgentView { chef: string; day_cap: number; match_cap: number; day: number; spent_today: number }
+
+/** Whether an agent's contract policy still allows `fee` today (the contract would refuse otherwise). */
+async function agentCanPay(a: AgentDef, fee: number): Promise<boolean> {
+  const acct = `${a.label}.${config.contract}`;
+  const p = await view<AgentView | null>('get_agent', { account_id: acct }).catch(() => null);
+  if (!p) return false;
+  // the contract counts days in nanoseconds since epoch / 1 day
+  const today = Math.floor(Date.now() / 86_400_000);
+  const spent = p.day === today ? p.spent_today : 0;
+  return fee <= p.match_cap && spent + fee <= p.day_cap;
+}
+
+/**
+ * Fill in each seat's chef token, clamp loadouts to real inventory, and pick ranked/fee.
+ * A match is ranked (fee into the pot) only if every chef seat can pay: approved by its owner,
+ * enough in the purse, and, for AI chefs, inside today's spending cap. League matches can be
+ * ranked with no human in them.
+ */
+export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = {}): Promise<{ seats: SeatPlan[]; fee: number }> {
   const out: SeatPlan[] = [];
   let allApproved = true;
   let anyHumanChef = false;
@@ -37,6 +55,7 @@ export async function planSeats(seats: SeatPlan[]): Promise<{ seats: SeatPlan[];
       const inv = t?.kind.Chef?.inventory ?? [];
       p.loadout = p.kind === 'bot' && p.agent ? await agentLoadout(p.agent) : CARDS.map((_, k) => Math.min(p.loadout?.[k] ?? 0, inv[k] ?? 0, 3));
       if ((t?.kind.Chef?.approved_fee ?? 0) < RANKED_FEE || (t?.purse ?? 0) < RANKED_FEE) allApproved = false;
+      if (p.kind === 'bot' && p.agent && !(await agentCanPay(p.agent, RANKED_FEE))) allApproved = false;
       if (p.kind === 'human') anyHumanChef = true;
     } else {
       p.chef = null;
@@ -45,7 +64,7 @@ export async function planSeats(seats: SeatPlan[]): Promise<{ seats: SeatPlan[];
     }
     out.push(p);
   }
-  return { seats: out, fee: anyHumanChef && allApproved ? RANKED_FEE : 0 };
+  return { seats: out, fee: (anyHumanChef || opts.league) && allApproved && out.some((x) => x.chef) ? RANKED_FEE : 0 };
 }
 
 export function setupFor(seed: string, seats: SeatPlan[]): Setup {
@@ -75,7 +94,7 @@ export class ChainMatch {
   private pending: string[] = [];
   private flushing: Promise<void> = Promise.resolve();
 
-  constructor(mode: 'solo' | 'room', readonly seats: SeatPlan[], readonly fee: number) {
+  constructor(mode: MatchRecord['mode'], readonly seats: SeatPlan[], readonly fee: number) {
     this.setup = setupFor(this.seed, seats);
     this.rec = {
       id: this.id, mode, createdAt: Date.now(), setup: this.setup,
