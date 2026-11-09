@@ -41,6 +41,8 @@ pub const DAY_NS: u64 = 86_400_000_000_000;
 pub const FAUCET: u64 = 50;
 pub const STARTING_PURSE: u64 = 100;
 pub const ROYALTY: u64 = 2;
+/// Recipe scrolls take at most this share (%) of a ranked pot.
+pub const ROYALTY_SHARE: u64 = 30;
 pub const SCOUT_PRICE: u64 = 5;
 pub const ACCUSE_RIGHT: i64 = 40;
 pub const CAUGHT: i64 = -40;
@@ -642,10 +644,12 @@ impl Kitchen {
         // royalties to recipe scrolls (ranked only), from the pot
         let mut pot = m.pot;
         let mut royalties = 0u64;
+        // scrolls share at most ROYALTY_SHARE % of the pot, so there's always a prize
+        let royalty_budget = m.pot * ROYALTY_SHARE / 100;
         if m.ranked {
             for r in &reports {
                 for d in &r.dishes {
-                    if pot < ROYALTY {
+                    if royalties + ROYALTY > royalty_budget {
                         break;
                     }
                     if let Some(scroll) = self.scroll_of.get(d).cloned() {
