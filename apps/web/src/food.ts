@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BASES, type Item, type ItemKind } from '@sushi/rules';
+import { BASES, recipeFor, type Item, type ItemKind } from '@sushi/rules';
 
 // Procedural, toy-like food. Every item is built from primitives and cached per kind.
 
@@ -72,6 +72,20 @@ const BUILD: Record<ItemKind, () => THREE.Object3D> = {
 };
 
 const cache = new Map<string, THREE.Object3D>();
+
+// Blender-built food (tools/blender/build_food.py): one glb, one named group per item kind, plus
+// "dish_maki" / "dish_temaki". When it's loaded, these replace the primitive fallbacks above.
+const models = new Map<string, THREE.Object3D>();
+export function setFoodModels(root: THREE.Object3D): void {
+  for (const child of root.children) {
+    const o = child.clone(true);
+    o.position.set(0, 0, 0);
+    o.traverse((m) => { if ((m as THREE.Mesh).isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+    models.set(child.name, o);
+  }
+  cache.clear();
+}
+const model = (name: string): THREE.Object3D | null => models.get(name)?.clone(true) ?? null;
 const keyOf = (it: Item): string => (it.k === 'plate' ? `plate:${[...(it.on ?? [])].sort().join(',')}` : it.k);
 
 /** A finished-looking dish: maki pieces or a temaki cone with the fillings showing. */
@@ -96,7 +110,7 @@ function dish(on: readonly ItemKind[]): THREE.Group {
     fills.forEach((f, j) => g.add(mesh(geo.sphere, fillMat(f), [0.04, 0.04, 0.04], [(j - fills.length / 2) * 0.05, 0.25, 0.1])));
   } else {
     on.forEach((k, j) => {
-      const o = BUILD[k]().clone();
+      const o = model(k) ?? BUILD[k]().clone();
       o.scale.multiplyScalar(0.55);
       const a = (j / Math.max(1, on.length)) * Math.PI * 2;
       o.position.set(Math.cos(a) * 0.11, 0.03, Math.sin(a) * 0.11);
@@ -110,13 +124,20 @@ export function itemObject(it: Item): THREE.Object3D {
   const key = keyOf(it);
   let proto = cache.get(key);
   if (!proto) {
-    if (it.k === 'plate') {
+    const done = it.k === 'plate' && it.on?.length ? recipeFor(it.on) : undefined;
+    const finished = done ? model(done.style === 'maki' ? 'dish_maki' : 'dish_temaki') : null;
+    if (finished) proto = finished;
+    else if (it.k === 'plate') {
       const g = new THREE.Group();
-      g.add(BUILD.plate());
-      g.add(mesh(new THREE.TorusGeometry(0.27, 0.012, 6, 32), C.rim, [1, 1, 1], [0, 0.03, 0], [Math.PI / 2, 0, 0]));
+      const base = model('plate');
+      if (base) g.add(base);
+      else {
+        g.add(BUILD.plate());
+        g.add(mesh(new THREE.TorusGeometry(0.27, 0.012, 6, 32), C.rim, [1, 1, 1], [0, 0.03, 0], [Math.PI / 2, 0, 0]));
+      }
       if (it.on?.length) { const d = dish(it.on); d.position.y = 0.03; g.add(d); }
       proto = g;
-    } else proto = BUILD[it.k]();
+    } else proto = model(it.k) ?? BUILD[it.k]();
     cache.set(key, proto);
   }
   // always a wrapper group, so callers can position/scale it without touching the item's own transform
