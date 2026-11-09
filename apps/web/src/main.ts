@@ -185,16 +185,18 @@ function whodunit(sock: WebSocket, m: WhoMsg, you: number): void {
 /** The accusation screen, shared by multiplayer (sent over the socket) and solo (sent with the log). */
 function whodunitPanel(m: WhoMsg, you: number, submit: (list: { sab: number; accused: number }[]) => void, note?: string): void {
   const picks = new Map<number, number>();
-  const send = (): void => submit([...picks].map(([sab, accused]) => ({ sab, accused })));
+  let sent = false;
+  const send = (): void => { if (sent) return; sent = true; clearInterval(iv); submit([...picks].map(([sab, accused]) => ({ sab, accused }))); };
   const timer = h('span', { class: 'dim' });
-  const iv = setInterval(() => { const s = Math.max(0, Math.ceil((m.until - Date.now()) / 1000)); timer.textContent = `${s}s`; if (s <= 0) clearInterval(iv); }, 250);
+  // when time runs out, whatever you picked is sealed (unpicked hits count as a pass)
+  const iv = setInterval(() => { const s = Math.max(0, Math.ceil((m.until - Date.now()) / 1000)); timer.textContent = `${s}s`; if (s <= 0) send(); }, 250);
   mount(ui, h('div', { class: 'panel' },
     h('h2', {}, 'Whodunit? ', timer),
     h('p', { class: 'dim' }, note ?? 'For each sabotage that hit you, name the culprit. Right: +40 to you, −40 to them. Wrong: −10. The seals open onchain next.'),
     h('div', { class: 'hits' }, ...m.hits.map((x) => h('div', { class: 'hit' },
       h('b', {}, CARD_INFO[x.card].name), h('small', {}, ` at ${Math.floor(x.tick / 20)}s${x.blocked ? ' (blocked)' : ''}`),
       h('div', { class: 'seg' }, ...m.names.map((n, i) => (i === you ? null : h('button', { onclick: (e: Event) => { picks.set(x.sab, i); [...(e.target as HTMLElement).parentElement!.children].forEach((b) => b.classList.remove('on')); (e.target as HTMLElement).classList.add('on'); } }, n))), h('button', { class: 'on', onclick: (e: Event) => { picks.delete(x.sab); [...(e.target as HTMLElement).parentElement!.children].forEach((b) => b.classList.remove('on')); (e.target as HTMLElement).classList.add('on'); } }, 'pass'))))),
-    h('button', { class: 'big', onclick: () => { clearInterval(iv); send(); } }, 'Seal my accusations')));
+    h('button', { class: 'big', onclick: send }, 'Seal my accusations')));
 }
 
 interface ResultsMsg { verified?: boolean; stateHash?: string; results: Result[]; reveal: { caster: number; target: number; card: Card; tick: number; blocked: boolean; fizzled: boolean }[]; accusations: { victim: number; sab: number; accused: number }[]; matchId: string; txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string }
