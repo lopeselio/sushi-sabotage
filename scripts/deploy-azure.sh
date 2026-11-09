@@ -15,6 +15,7 @@ TAG=${TAG:-$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)}
 set -a; [ -f .env ] && . ./.env; set +a
 CONTRACT=${CONTRACT_ID:-sushi-sabotage.testnet}
 REFEREE=${REFEREE_ID:-sushi-sabotage-ref.testnet}
+RELAYER=${RELAYER_ID:-sushi-sabotage-relay.testnet}
 
 az extension add -n containerapp --upgrade -y -o none 2>/dev/null || true
 if [ -z "${SKIP_SETUP:-}" ]; then
@@ -38,14 +39,18 @@ IMAGE="$ACR.azurecr.io/sushi-sabotage:$TAG"
 # the referee's and agents' keys, as one JSON secret
 KEYS=$(node -e '
   const fs = require("fs"), os = require("os"), path = require("path");
-  const [contract, referee] = process.argv.slice(1);
-  const ids = [referee, ...["kenji","mei","hana","tomo","fixer","scout"].map((a) => `${a}.${contract}`)];
+  const [contract, referee, relayer] = process.argv.slice(1);
+  const ids = [referee, relayer, ...["kenji","mei","hana","tomo","fixer","scout"].map((a) => `${a}.${contract}`)];
   const out = {};
   for (const id of ids) out[id] = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".near-credentials", "testnet", `${id}.json`), "utf8")).private_key;
-  process.stdout.write(JSON.stringify(out));' "$CONTRACT" "$REFEREE")
+  process.stdout.write(JSON.stringify(out));' "$CONTRACT" "$REFEREE" "$RELAYER")
+
+# the public URL players use: the wallet signs "Sign in to <host>" for it (Better Auth)
+FQDN_NOW=$(az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+PUBLIC_URL=${PUBLIC_URL:-${FQDN_NOW:+https://$FQDN_NOW}}
 
 az containerapp env show -g "$RG" -n "$ENV_NAME" -o none 2>/dev/null || az containerapp env create -g "$RG" -n "$ENV_NAME" -l "$LOC" -o none
-ENVS=(NEAR_NETWORK=testnet DATA_DIR=/data "CONTRACT_ID=$CONTRACT" "REFEREE_ID=$REFEREE" "NEARAI_BASE_URL=${NEARAI_BASE_URL:-https://cloud-api.near.ai/v1}" "NEARAI_MODEL=${NEARAI_MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}" NEAR_KEYS=secretref:near-keys NEARAI_API_KEY=secretref:nearai-key SESSION_SECRET=secretref:session-secret)
+ENVS=(NEAR_NETWORK=testnet DATA_DIR=/data "CONTRACT_ID=$CONTRACT" "REFEREE_ID=$REFEREE" "RELAYER_ID=$RELAYER" ${PUBLIC_URL:+"BETTER_AUTH_URL=$PUBLIC_URL"} "NEARAI_BASE_URL=${NEARAI_BASE_URL:-https://cloud-api.near.ai/v1}" "NEARAI_MODEL=${NEARAI_MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}" NEAR_KEYS=secretref:near-keys NEARAI_API_KEY=secretref:nearai-key SESSION_SECRET=secretref:session-secret)
 if az containerapp show -g "$RG" -n "$APP" -o none 2>/dev/null; then
   az containerapp secret set -g "$RG" -n "$APP" --secrets "near-keys=$KEYS" "nearai-key=${NEARAI_API_KEY:-none}" "session-secret=${SESSION_SECRET:?set SESSION_SECRET in .env}" -o none
   az containerapp update -g "$RG" -n "$APP" --image "$IMAGE" --set-env-vars "${ENVS[@]}" -o none
