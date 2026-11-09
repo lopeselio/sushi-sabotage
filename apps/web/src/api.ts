@@ -1,15 +1,8 @@
-// Server API. A wallet session token (from NEP-413 sign-in) is kept in localStorage.
-
-const KEY = 'sushi.session';
-export const session = {
-  get token(): string | null { try { return localStorage.getItem(KEY); } catch { return null; } },
-  set(token: string | null): void { try { if (token) localStorage.setItem(KEY, token); else localStorage.removeItem(KEY); } catch { /* private mode */ } },
-};
+// Server API. The wallet session is Better Auth's HttpOnly cookie, sent automatically (same origin).
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (session.token) headers.authorization = `Bearer ${session.token}`;
-  const res = await fetch(`/api${path}`, body === undefined ? { headers } : { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetch(`/api${path}`, body === undefined ? { headers, credentials: 'same-origin' } : { method: 'POST', headers, credentials: 'same-origin', body: JSON.stringify(body) });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   return data;

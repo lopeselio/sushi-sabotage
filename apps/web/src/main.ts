@@ -1,6 +1,6 @@
 import './style.css';
 import { CARD_INFO, CARDS, RECIPES, stateHash, type Card, type LogEntry, type Result, type SimEvent, type State } from '@sushi/rules';
-import { api, explorer, explorerAccount, session, type Me, type ServerConfig } from './api.ts';
+import { api, explorer, explorerAccount, type Me, type ServerConfig } from './api.ts';
 import { isMuted, setMuted, sfx } from './audio.ts';
 import { RoomShift, SoloShift, type Shift } from './game.ts';
 import { CHEF_COLORS, KitchenScene } from './scene.ts';
@@ -26,7 +26,7 @@ async function boot(): Promise<void> {
   idleLoop();
   cfg = await api<ServerConfig>('/config').catch(() => null);
   if (cfg) setContract(cfg.contract);
-  if (session.token) me = await api<Me>('/me').catch(() => { session.set(null); return null; });
+  me = await api<Me>('/me').catch(() => null); // signed in if the session cookie is still good
   title();
 }
 
@@ -144,7 +144,7 @@ function room(first: { t: 'create' } | { t: 'join'; code: string }): void {
   ws = sock;
   let names: string[] = [];
   let you = 0;
-  sock.onopen = () => { sock.send(JSON.stringify({ t: 'hello', session: session.token, name: chefName() })); sock.send(JSON.stringify(first)); };
+  sock.onopen = () => { sock.send(JSON.stringify({ t: 'hello', name: chefName() })); sock.send(JSON.stringify(first)); };
   sock.onclose = () => { if (ws === sock && shift instanceof RoomShift && !shift.ended) { toast('Disconnected from the kitchen', 'bad'); title(); } };
   sock.onmessage = (e) => {
     const m = JSON.parse(String(e.data)) as Record<string, unknown> & { t: string };
@@ -265,8 +265,9 @@ async function market(): Promise<void> {
       else if (r.outcome.kind === 'refuse') round = 0;
       else if (r.offer) {
         say('Receipt', `Offer posted onchain`, 'sys');
-        const res = await call<number>('accept_offer', { offer_id: r.offer.offerId });
-        say('Receipt', `You bought ${CARD_INFO[card].name} for ${r.outcome.price} ryo. Tx ${res.tx.slice(0, 10)}…`, 'sys');
+        say('Wallet', 'Approve the purchase in your wallet (no gas: the game relays it).', 'sys');
+        const res = await call('accept_offer', { offer_id: r.offer.offerId });
+        say('Receipt', `You bought ${CARD_INFO[card].name} for ${r.outcome.price} ryo${res.gasless ? ', gas paid by the game' : ''}. Tx ${res.tx.slice(0, 10)}…`, 'sys');
         me = await api<Me>('/me');
         round = 0;
       }
@@ -290,8 +291,8 @@ async function myChef(): Promise<void> {
   }
   if (!me.chef) {
     const name = h('input', { value: store.name || 'Chef', maxlength: 20 });
-    mount(ui, nav(), h('div', { class: 'panel center' }, h('h2', {}, 'Mint your chef'), h('p', {}, 'Free. Starts with 100 ryo. No gas prompts: your wallet’s game key signs it.'), name,
-      h('button', { class: 'big', onclick: async () => { try { const r = await call<string>('mint_chef', { name: name.value.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20) || 'Chef' }); toast(`Minted ${r.value}`, 'good'); me = await api<Me>('/me'); myChef(); } catch (e) { toast((e as Error).message, 'bad'); } } }, 'Mint chef')));
+    mount(ui, nav(), h('div', { class: 'panel center' }, h('h2', {}, 'Mint your chef'), h('p', {}, 'Free. Starts with 100 ryo. Your wallet asks you to approve it once; the game pays the gas.'), name,
+      h('button', { class: 'big', onclick: async () => { try { await call('mint_chef', { name: name.value.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20) || 'Chef' }); me = await api<Me>('/me'); toast(`Minted ${me.chef ?? 'your chef'}`, 'good'); myChef(); } catch (e) { toast((e as Error).message, 'bad'); } } }, 'Mint chef')));
     return;
   }
   const t = me.token!;
