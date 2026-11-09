@@ -4,7 +4,7 @@ import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { CARDS, SHIFT_TICKS, replay, stateHash, validAccusations, type Card, type LogEntry } from '@sushi/rules';
 import { ALL_AGENTS, CHEF_AGENTS, FIXER, accountOf, agentChef, agentEconomyTick, fixerOffer, haggleWithFixer, prices, recentActs, taunt } from './agents.ts';
-import { challenge, sessionAccount, verifySignIn, type SignedMessage } from './auth.ts';
+import { BA_PATH, accountFromHeaders, authHandler } from './ba.ts';
 import { view } from './chain.ts';
 import { config, explorerTx } from './config.ts';
 import { ChainMatch, planSeats, soloBots, type SeatPlan } from './match.ts';
@@ -30,7 +30,6 @@ async function body<T>(req: IncomingMessage, max = 2_000_000): Promise<T> {
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as T;
 }
-const bearer = (req: IncomingMessage): string | undefined => req.headers.authorization?.replace(/^Bearer /, '');
 const cleanName = (n: unknown): string => String(n ?? '').replace(/[^A-Za-z0-9 _-]/g, '').trim().slice(0, 20) || 'Chef';
 
 const MIME: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.glb': 'model/gltf-binary', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
@@ -97,8 +96,10 @@ setInterval(() => { const now = Date.now(); for (const [k, v] of solos) if (v.ex
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
-  const me = sessionAccount(bearer(req));
   try {
+    // wallet sign-in, sessions and gasless relay: Better Auth + better-near-auth
+    if (p === BA_PATH || p.startsWith(`${BA_PATH}/`)) { await authHandler(req, res); return; }
+    const me = await accountFromHeaders(req.headers);
     if (p === '/api/health') return json(res, 200, { ok: true, version: process.env.APP_VERSION ?? 'dev' });
     if (p === '/api/status') {
       const accounts = config.chainEnabled ? await chainStatus() : [];
@@ -109,11 +110,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         network: config.network, contract: config.contract, referee: config.referee, chain: config.chainEnabled,
         agents: await Promise.all(ALL_AGENTS.map(async (a) => ({ label: a.label, name: a.name, account: accountOf(a), chef: await agentChef(a), skill: a.skill ?? null }))),
       });
-    }
-    if (p === '/api/auth/challenge') return json(res, 200, challenge());
-    if (p === '/api/auth/verify' && req.method === 'POST') {
-      const token = await verifySignIn(await body<SignedMessage>(req));
-      return json(res, 200, { token, accountId: sessionAccount(token) });
     }
     if (p === '/api/me') {
       if (!me) return json(res, 401, { error: 'not signed in' });
@@ -166,17 +162,20 @@ const server = createServer((req, res) => { void route(req, res); });
 // ---------- websocket: multiplayer rooms ----------
 
 const wss = new WebSocketServer({ server, path: '/ws', perMessageDeflate: { threshold: 512 }, maxPayload: 16_000 });
-wss.on('connection', (ws: WebSocket) => {
+wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
   let room: Room | null = null;
+  // the session cookie rides on the WebSocket upgrade (same origin)
   let account: string | null = null;
+  const ready = accountFromHeaders(req.headers).then((a) => { account = a; }).catch(() => undefined);
   let name = 'Chef';
   const reply = (m: unknown): void => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
+    await ready; // messages wait for the session lookup; they stay in order
     let m: Record<string, unknown>;
     try { m = JSON.parse(String(raw)) as Record<string, unknown>; } catch { return; }
     try {
       switch (m.t) {
-        case 'hello': account = sessionAccount(m.session as string | undefined); name = cleanName(m.name); reply({ t: 'hello', account }); break;
+        case 'hello': name = cleanName(m.name); reply({ t: 'hello', account }); break;
         case 'create': room?.leave(ws); room = new Room(); room.join(ws, name, account); break;
         case 'join': { const r = Room.get(String(m.code ?? '')); if (!r) throw new Error('no room with that code'); room?.leave(ws); r.join(ws, name, account); room = r; break; }
         case 'addBot': room?.addBot(ws); break;
