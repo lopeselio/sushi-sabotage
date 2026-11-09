@@ -25,6 +25,7 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - You see an AI chef's taunt. With a NEAR AI key set, it's "signed by a TEE model on NEAR AI".
    - Then a 3-second countdown, and your stall on a night-market street with three rival stalls.
    - **WASD** to move, **E** to pick up or put down, **F** to chop. Orders appear top-left.
+   - On your first three shifts a yellow arrow and a **Next:** line show the next step for the most urgent order ("Grab a plate from the rack", "Put the raw rice in the rice cooker", …). **H** toggles them. The hints come from the AI chefs' own planner.
 2. **Cook a dish.** For *Azure Fin Maki*:
    - **Rice:** raw rice → cooker (3 s) → board (3 chops) = sushi rice.
    - **Base:** nori sheet → board (3 chops) = nori roll.
@@ -33,8 +34,9 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
 3. **Sabotage.** With Mischief charged, press **Tab** to pick a target, then **1–6** for a card.
    - The rival's stall flashes red. The AI chefs do the same to you, and you get "Someone hit you with …".
    - **V** shows all four kitchens at once.
-4. **Shift end.** The page says "The referee is re-running your shift to check it…". The server replays your input log through the same deterministic sim, then you see:
-   - the results table;
+4. **Shift end.** If anyone hit you, you get **Whodunit?** first: name a suspect for each hit. Then the page says "The referee is re-running your shift to check it…". The server replays your input log through the same deterministic sim, then you see:
+   - "✓ The referee re-ran your shift from the input log and reached the same state";
+   - the results table (in an unranked solo shift your accusations score; in a ranked one they don't, because your browser ran the sim and could know the culprits);
    - **the sealed sabotage log, opened**: who hit whom, with what, and when;
    - links to `create_match`, `seal xN` and `settle_match` on nearblocks.
 
@@ -45,7 +47,14 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - every seal and its opening (salt included), and the accusations;
    - the signed NEAR AI lines.
 
-   To check a seal: `sha256("<match>|<caster>|<target>|<card>|<tick>|<salt>")` must equal the seal posted onchain mid-shift.
+   Check any finished match yourself with no keys: `pnpm verify <matchId>`. It fetches the bundle and the contract's record, then checks the seed against its committed hash, every seal against its opening, re-runs the shift from the input log, and compares the final scores with the contract:
+
+   ```
+   ✓ seed matches the hash committed at create_match
+   ✓ every opening hashes to its seal
+   ✓ replaying the input log reaches the recorded end state
+   ✓ final scores from the replay match the contract  [700, 249, 190]
+   ```
 6. **Multiplayer.**
    - **Create room** gives you a 4-letter code. Open a second browser window, enter the code and press **Join**.
    - The host can **Add AI chef**. Everyone presses **Ready**.
@@ -57,11 +66,14 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - Go to **My Chef → Mint chef**. There's no gas prompt: the limited key signs it.
    - You see the NFT card. It shows level, title, purse (100 ryo), stats and cards, and updates after every shift.
    - **Claim daily 50 ryo** adds to the purse. **Enable ranked (10 ryo/match)** lets the referee charge an entry fee into the prize pot.
+   - The same flow without a wallet app, against the live contract: `pnpm --filter @sushi/server e2e` creates a faucet test account and runs mint → sign-in → faucet → ranked approval → haggle → buy → ranked shift with the card → settlement → leaderboard → NEP-245 card transfer.
 8. **The Night Market.**
    - Pick a card and offer a price, optionally with a line of text. The Fixer answers in character.
    - The **price comes from `packages/rules/src/market.ts`**: demand raises it, it decays over an hour, and there's one counter-offer with an 80 % floor. The model only does the talking.
    - On accept, the Fixer agent posts an onchain offer, and your browser accepts it. The page shows the receipt, and the card lands in your chef NFT's inventory.
-9. **The agents.** The **Agents** page lists each agent account and the receipts of what they did on their own (every 4 minutes):
+   - Cards are also **NEP-245 multi-tokens** (`mt_balance_of`, `mt_transfer`, `mt_batch_transfer`, `mt_transfer_call`, `mt_supply`): your balance is your chef's inventory, so players can trade cards. Buying mints one; bringing it into a match burns it.
+9. **The AI league.** Every 15 minutes three AI chefs play a full ranked shift against each other with nobody watching: entry fees into the pot, prizes and recipe-scroll royalties paid by the contract, the season leaderboard moving. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
+10. **The agents.** The **Agents** page lists each agent account and the receipts of what they did on their own (every 10 minutes):
    - claim the faucet;
    - buy their favourite card from the Fixer;
    - pay Scout Nori 5 ryo for a report on the current leader.
@@ -96,12 +108,14 @@ tools/blender     bpy script that builds every 3D model (.glb) and its preview
   - `/api/attestation` returns a fresh attestation report bound to a nonce.
 - **Agent economy.**
   - Agents are sub-accounts created by the contract (`create_agent_account`) with a single function-call key. It's limited to `post_offer`, `accept_offer`, `buy_scout`, `approve_referee` and `claim_daily`.
-  - `register_agent` puts the agent's chef under caps: 60 ryo/day, 10 ryo per match entry. `spend()` enforces them on every purchase and entry fee.
+  - `register_agent` puts the agent's chef under caps: 150 ryo/day, 10 ryo per match entry. `spend()` enforces them on every purchase and entry fee. The server checks the cap before seating an agent in a ranked match, and the agents keep enough budget for three league entries.
+  - `/api/status` shows each agent's balance and remaining key allowance; `node scripts/top-up.mjs` refills balances from the owner account.
   - Agents can't move NEAR or call other contracts.
 - **NFTs that do something.**
   - A Chef NFT is the account: its purse, card inventory, stats and best score are stored on the token. `nft_transfer` moves all of it.
   - Metadata is generated from that state on every read: title "Name · Title · Lv N", an SVG card and an `extra` JSON.
-  - The 20 **Recipe Scrolls** each have their own purse. In ranked matches, 2 ryo per delivered dish go from the pot to that recipe's scroll. The AI chefs own 16 of them, so agents earn passive income. `move_purse` moves a scroll's earnings into your chef.
+  - The 20 **Recipe Scrolls** each have their own purse. In ranked matches, 2 ryo per delivered dish go from the pot to that recipe's scroll, capped at 30% of the pot so there's always a prize. The AI chefs own 16 of them, so agents earn passive income. `move_purse` moves a scroll's earnings into your chef.
+  - Sabotage cards are NEP-245 tokens held by the chef NFT (see step 8).
 - **Chain invisible.**
   - Guests play with no wallet.
   - Signed-in players sign gameplay through the function-call key added at sign-in, so there are no popups.
@@ -112,20 +126,24 @@ tools/blender     bpy script that builds every 3D model (.glb) and its preview
 - During a multiplayer shift, the game server runs the sim, so it sees every input. It also holds the agents' keys.
 - Shift scores are reported by the referee. They're reproducible from the public input log (`replay()` in `packages/rules`), but the contract doesn't re-run the sim.
 - Moving the referee into a TEE would close that gap. It isn't done.
+- In solo, your browser runs the sim, so it could know who sabotaged you; that's why your own accusations don't score in ranked solo shifts.
 
 ## Tests
 
 ```bash
-pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market
-pnpm contract:test                   # 16 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties
+pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market, hints
+pnpm contract:test                   # 20 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties, NEP-245
 pnpm sim 10                          # headless AI-only shifts: balance check
+pnpm verify <matchId>                # re-run a finished match and check it against the contract
+pnpm --filter @sushi/server e2e      # the whole signed-in player flow on testnet with a fresh faucet account
 ```
 
 ## Deploying
 
 - **Contract:** `pnpm contract:build`, then `near contract deploy sushi-sabotage.testnet use-file contracts/kitchen/target/near/sushi_sabotage_kitchen.wasm with-init-call new json-args '{"owner":"sushi-sabotage.testnet","referee":"sushi-sabotage-ref.testnet"}' …`.
 - **Agents:** `pnpm --filter @sushi/server setup:agents`. It creates the six agent accounts with function-call keys, registers them, approves fees and mints the 20 scrolls. It is idempotent.
-- **Hosting:** `scripts/deploy-azure.sh`. One Docker image runs on Azure Container Apps; the server serves the web app.
+- **Hosting:** `scripts/deploy-azure.sh`. One Docker image runs on Azure Container Apps (one replica: rooms live in memory); the server serves the web app. `scripts/azure-storage.sh` mounts an Azure Files share at `/data`, so proof bundles survive restarts and redeploys.
+- **Upgrading the contract:** `near contract deploy sushi-sabotage.testnet use-file … without-init-call …` (state layout is unchanged), then `mt_reindex_supply` once if card supply needs recounting.
 
 ## Lineage, reuse and disclosures
 
