@@ -13,7 +13,7 @@
     "test": "pnpm -r test",
     "sim": "pnpm --filter @sushi/rules sim",
     "verify": "pnpm --filter @sushi/verify verify",
-    "assets": "/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_assets.py",
+    "assets": "/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_assets.py && /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_food.py",
     "contract:test": "cd contracts/kitchen && cargo test --locked",
     "contract:build": "cd contracts/kitchen && cargo near build non-reproducible-wasm --locked"
   },
