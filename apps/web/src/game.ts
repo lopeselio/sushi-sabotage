@@ -112,21 +112,21 @@ export abstract class Shift {
   /** React to sim events: sounds, particles, toasts. */
   protected events(ev: SimEvent[]): void {
     for (const e of ev) {
+      this.scene.onEvent(e);
       const mine = 'chef' in e && e.chef === this.you;
       switch (e.t) {
-        case 'chop': if (mine) { sfx.chop(); this.scene.burst(e.chef, e.counter, 0xffffff, 5); } break;
+        case 'chop': if (mine) sfx.chop(); break;
         case 'pick': if (mine) sfx.pick(); break;
         case 'place': if (mine) sfx.place(); break;
         case 'trash': if (mine) sfx.trash(); break;
         case 'cooked': if (mine) sfx.cooked(); break;
-        case 'burn': this.scene.burst(e.chef, e.counter, 0x222222, 18); if (mine) { sfx.burn(); toast('Burnt! −10', 'bad'); } break;
+        case 'burn': if (mine) { sfx.burn(); toast('Burnt! −10', 'bad'); } break;
         case 'deliver': if (mine) { sfx.deliver(); toast(`${RECIPES[e.recipe].name} +${e.points}${e.tip ? ` (tip ${e.tip})` : ''}`, 'good'); } break;
         case 'wrong': if (mine) { sfx.wrong(); toast('Wrong dish −5', 'bad'); } break;
         case 'expire': if (mine) { sfx.wrong(); toast(`${RECIPES[e.recipe].name} went cold −15`, 'bad'); } break;
         case 'order': if (mine) sfx.order(); break;
         case 'cast': if (e.caster === this.you) { sfx.cast(); toast(`You played ${CARD_INFO[e.card].name}${CARD_INFO[e.card].self ? '' : ` on ${this.names[e.target]}`}`); } break;
         case 'sabotaged':
-          this.scene.flashPod(e.target);
           if (e.target === this.you) {
             sfx.sabotaged();
             toast(e.blocked ? `Your Bamboo Shield blocked a ${CARD_INFO[e.card].name}!` : `Someone hit you with ${CARD_INFO[e.card].name}!${e.fizzled ? ' (it fizzled)' : ''}`, e.blocked ? 'good' : 'bad');
