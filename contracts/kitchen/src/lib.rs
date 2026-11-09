@@ -23,6 +23,7 @@ use near_sdk::{
     PublicKey,
 };
 
+mod mt;
 #[cfg(test)]
 mod tests;
 
@@ -483,6 +484,8 @@ impl Kitchen {
         };
         self.credit(&o.seller_chef, o.price);
         self.offers.remove(&offer_id);
+        let buyer_owner = self.tokens.get(&o.buyer_chef).unwrap().owner_id.clone();
+        mt::minted(&buyer_owner, o.card as usize, 1);
         Event::Receipt {
             buyer_chef: o.buyer_chef,
             seller_chef: o.seller_chef,
@@ -541,10 +544,17 @@ impl Kitchen {
             }
             if !s.loadout.is_empty() {
                 let t = self.tokens.get_mut(chef).unwrap();
+                let owner = t.owner_id.clone();
                 if let Kind::Chef { inventory: inv, .. } = &mut t.kind {
                     for (k, n) in s.loadout.iter().enumerate() {
                         require!(inv[k] >= *n, "loadout exceeds the chef's cards");
                         inv[k] -= *n;
+                    }
+                }
+                // cards brought to a match are used up
+                for (k, n) in s.loadout.iter().enumerate() {
+                    if *n > 0 {
+                        mt::burned(&owner, k, *n as u128);
                     }
                 }
             }
