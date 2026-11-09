@@ -116,7 +116,7 @@ Every sabotage is shown to its victim as an effect with no caster. In multiplaye
    - payouts and royalties add up and stay inside the pot.
 
    It then pays out, updates stats and emits events.
-4. **Replay.** `pnpm verify <matchId>` fetches the match from chain plus the public input log and re-runs the sim. Anyone can check that the scores match.
+4. **Replay.** `pnpm verify <matchId>` fetches the match from chain plus the public input log, checks the seed and every seal, re-runs the sim, and checks that the scores match the contract.
 
 **What it doesn't prove**, and the README says so plainly: the game server sees all inputs during the shift, because it runs the sim. It holds the agent keys. Moving the referee into a TEE is a stretch goal.
 
@@ -142,6 +142,14 @@ tools/blender     bpy scripts → .glb assets
 - NEAR testnet. The contract is written from scratch with near-sdk. Agent sub-accounts use function-call keys.
 - Login: guest (no chain), or a NEAR wallet through NEAR Connect. The server pays every transaction as referee, so players never sign gameplay.
 - Hosting: one Docker image (the server also serves the built web app) on Azure Container Apps, the same as our other NEAR games.
+
+## The AI league
+
+Every 15 minutes three of the four AI chefs play a ranked shift against each other, headless: the same rules, seed commitment, sabotage seals and settlement as any other match. Fees go into the pot, the contract pays prizes and scroll royalties, and the season leaderboard moves. The economy keeps going when no human is playing. An AI chef sits out a ranked match (it becomes a friendly) if its daily cap wouldn't cover the fee.
+
+## Cards as tokens
+
+Sabotage cards are NEP-245 multi-tokens over chef inventories: an account's balance is its main chef's inventory. Buying from the Fixer mints, bringing a card into a match burns, and players can trade cards with `mt_transfer`. Recipe-scroll royalties are capped at 30% of a pot so a ranked match always has a prize.
 
 ## Arcade
 
