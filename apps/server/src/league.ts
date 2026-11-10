@@ -27,6 +27,8 @@ export async function leagueRound(): Promise<{ id: string; ranked: boolean; resu
     kvSet('leagueRound', round + 1);
     const { seats, fee } = await planSeats(lineup(round), { league: true });
     if (!seats.some((s) => s.chef)) return null;
+    // no difficulty: league shifts stay on rules v1, each AI chef at its persona skill (Kenji hard,
+    // Mei and Hana normal, Tomo easy), exactly the bots the league has always played with
     const match = new ChainMatch('league', seats, fee);
     // AI chefs only: the whole shift is decided by the bots, so it replays from an empty input log
     const s = replay(match.setup, []);

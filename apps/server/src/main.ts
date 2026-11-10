@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { CARDS, SHIFT_TICKS, replay, stateHash, validAccusations, type Card, type LogEntry } from '@sushi/rules';
+import { CARDS, DIFFICULTIES, SHIFT_TICKS, replay, stateHash, validAccusations, type BotSkill, type Card, type LogEntry } from '@sushi/rules';
 import { ALL_AGENTS, CHEF_AGENTS, FIXER, accountOf, agentChef, agentEconomyTick, fixerOffer, haggleWithFixer, prices, recentActs, taunt } from './agents.ts';
 import { BA_PATH, accountFromHeaders, authHandler } from './ba.ts';
 import { view } from './chain.ts';
@@ -49,13 +49,13 @@ function serveStatic(req: IncomingMessage, res: ServerResponse): void {
 interface SoloRun { match: ChainMatch; expires: number; you: number }
 const solos = new Map<string, SoloRun>();
 
-async function soloStart(account: string | null, name: string, bots: number, loadout: number[]) {
+async function soloStart(account: string | null, name: string, bots: number, loadout: number[], difficulty: BotSkill) {
   const seats: SeatPlan[] = [
     { name, kind: account ? 'human' : 'guest', account: account ?? undefined, loadout },
     ...soloBots(bots).map((a): SeatPlan => ({ name: a.name, kind: 'bot', agent: a })),
   ];
   const planned = await planSeats(seats);
-  const match = new ChainMatch('solo', planned.seats, planned.fee);
+  const match = new ChainMatch('solo', planned.seats, planned.fee, difficulty);
   const setup = match.setup;
   solos.set(match.id, { match, expires: Date.now() + 15 * 60_000, you: 0 });
   const line = await Promise.race([
@@ -64,7 +64,7 @@ async function soloStart(account: string | null, name: string, bots: number, loa
   ]);
   if (line) match.rec.lines.push(line);
   // in solo the browser runs the sim, so it gets the seed now; the hash was committed first
-  return { matchId: match.id, setup, you: 0, ranked: planned.fee > 0, fee: planned.fee, seedHash: match.rec.seedHash, line: line ? { who: line.who, text: line.text, signed: !!line.signature } : null };
+  return { matchId: match.id, setup, difficulty, you: 0, ranked: planned.fee > 0, fee: planned.fee, seedHash: match.rec.seedHash, line: line ? { who: line.who, text: line.text, signed: !!line.signature } : null };
 }
 
 async function soloFinish(matchId: string, log: LogEntry[], clientHash: string, mine: { sab: number; accused: number }[]) {
@@ -87,7 +87,7 @@ async function soloFinish(matchId: string, log: LogEntry[], clientHash: string, 
   const { results, settled } = run.match.finish(s, acc);
   const reveal = s.sab.map((x) => ({ caster: x.caster, target: x.target, card: x.card, tick: x.tick, blocked: x.blocked, fizzled: x.fizzled }));
   void settled;
-  return { results, reveal, accusations: acc, matchId, ranked: run.match.rec.ranked, verified, stateHash: stateHash(s) };
+  return { results, reveal, accusations: acc, matchId, difficulty: run.match.difficulty, ranked: run.match.rec.ranked, verified, stateHash: stateHash(s) };
 }
 setInterval(() => { const now = Date.now(); for (const [k, v] of solos) if (v.expires < now) solos.delete(k); }, 60_000).unref();
 
@@ -119,8 +119,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return json(res, 200, { accountId: me, chef, token, raw });
     }
     if (p === '/api/solo/start' && req.method === 'POST') {
-      const b = await body<{ name?: string; bots?: number; loadout?: number[] }>(req);
-      return json(res, 200, await soloStart(me, cleanName(b.name), Math.max(1, Math.min(3, Number(b.bots ?? 3))), Array.isArray(b.loadout) ? b.loadout.map(Number) : []));
+      const b = await body<{ name?: string; bots?: number; loadout?: number[]; difficulty?: string }>(req);
+      const difficulty = DIFFICULTIES.find((d) => d === b.difficulty) ?? 'normal';
+      return json(res, 200, await soloStart(me, cleanName(b.name), Math.max(1, Math.min(3, Number(b.bots ?? 3))), Array.isArray(b.loadout) ? b.loadout.map(Number) : [], difficulty));
     }
     if (p === '/api/solo/finish' && req.method === 'POST') {
       const b = await body<{ matchId: string; log: LogEntry[]; stateHash?: string; accusations?: { sab: number; accused: number }[] }>(req);
@@ -179,6 +180,7 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
         case 'create': room?.leave(ws); room = new Room(); room.join(ws, name, account); break;
         case 'join': { const r = Room.get(String(m.code ?? '')); if (!r) throw new Error('no room with that code'); room?.leave(ws); r.join(ws, name, account); room = r; break; }
         case 'addBot': room?.addBot(ws); break;
+        case 'difficulty': room?.setDifficulty(ws, String(m.level ?? '')); break;
         case 'kick': room?.kick(ws, Number(m.seat)); break;
         case 'ready': room?.setReady(ws, !!m.ready, Array.isArray(m.loadout) ? (m.loadout as number[]) : []); break;
         case 'in': room?.input(ws, (m.i ?? {}) as never); break;
