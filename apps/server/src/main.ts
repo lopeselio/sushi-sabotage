@@ -210,10 +210,13 @@ server.listen(config.port, () => {
   console.log(`Sushi Sabotage on :${config.port} (contract ${config.contract}, chain ${config.chainEnabled ? 'on' : 'off'})`);
 });
 
-// the AI chefs run their own economy every few minutes
+// the AI chefs run their own economy every few minutes (AGENT_TICK=0 turns it off, e.g. for a local
+// test server next to the hosted one; LEAGUE_MINUTES=0 does the same for the league)
 if (config.chainEnabled) {
-  const loop = (): void => { void agentEconomyTick().catch((e) => console.warn('agent tick:', (e as Error).message)); };
-  setTimeout(loop, 5000);
-  setInterval(loop, 10 * 60_000).unref();
+  if (process.env.AGENT_TICK !== '0') {
+    const loop = (): void => { void agentEconomyTick().catch((e) => console.warn('agent tick:', (e as Error).message)); };
+    setTimeout(loop, 5000);
+    setInterval(loop, 10 * 60_000).unref();
+  }
   startLeague();
 }
