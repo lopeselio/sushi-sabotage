@@ -3,7 +3,7 @@ import { PROFILES, createState, replay, rulesOf, seedTag, stateHash, step, tagge
 import { balanceSetup, humanShift, summarize } from '../src/balance.ts';
 
 const v2 = (difficulty: 'easy' | 'normal' | 'hard', seed = 'x'): Setup => ({
-  seed: taggedSeed(seed, difficulty), rulesVersion: 2, difficulty,
+  seed: taggedSeed(seed, difficulty, 2), rulesVersion: 2, difficulty,
   chefs: [{ name: 'me' }, { name: 'a', bot: difficulty }, { name: 'b', bot: difficulty }],
 });
 
@@ -40,8 +40,9 @@ describe('AI chef difficulty profiles', () => {
 describe('rules versions', () => {
   it('the seed commits to the rules version and difficulty', () => {
     expect(seedTag('3f9a')).toEqual({ rulesVersion: 1 });
-    expect(seedTag(taggedSeed('3f9a', 'easy'))).toEqual({ rulesVersion: 2, difficulty: 'easy' });
-    expect(seedTag(taggedSeed('3f9a'))).toEqual({ rulesVersion: 2, difficulty: undefined });
+    expect(seedTag(taggedSeed('3f9a', 'easy', 2))).toEqual({ rulesVersion: 2, difficulty: 'easy' });
+    expect(seedTag(taggedSeed('3f9a', undefined, 2))).toEqual({ rulesVersion: 2, difficulty: undefined });
+    expect(seedTag(taggedSeed('3f9a', 'hard'))).toEqual({ rulesVersion: 3, difficulty: 'hard' });
     expect(rulesOf({ seed: '3f9a', chefs: [] })).toBe(1);
     expect(rulesOf(v2('hard'))).toBe(2);
     expect(() => seedTag('v9.3f9a')).toThrow(/unknown rules version/);
