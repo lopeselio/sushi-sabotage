@@ -59,3 +59,9 @@ button.mint { background: linear-gradient(90deg, #ffb547, #e2433b); color: #1b14
   .mint-cta .row { justify-content: center; }
   .chef-chip { flex-wrap: wrap; }
 }
+.pay-card { max-width: 460px; }
+.pay-card h2 { margin-top: 0; }
+.pay-amount { font-size: 34px; font-weight: 800; margin: 6px 0 10px; color: #ffb547; }
+.pay-amount small { font-size: 14px; opacity: .7; }
+.pay-card ul { padding-left: 18px; font-size: 13px; }
+.pay-card .row { display: flex; gap: 10px; flex-wrap: wrap; }
