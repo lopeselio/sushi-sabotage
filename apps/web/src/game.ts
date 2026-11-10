@@ -235,7 +235,7 @@ function touchPad(g: Shift): HTMLElement {
   stick.addEventListener('pointerup', up);
   stick.addEventListener('pointercancel', up);
   document.body.classList.add('touch-ui');
-  return h('div', { class: 'touch' }, stick, h('button', { class: 'tbtn act', onpointerdown: () => g.touchAct() }, 'E'), h('button', { class: 'tbtn chop', onpointerdown: () => g.touchChop() }, 'Chop'));
+  return h('div', { class: 'touch' }, stick, h('div', { class: 'tbtns' }, h('button', { class: 'tbtn act', 'aria-label': 'Pick up or put down', onpointerdown: () => g.touchAct() }, 'E'), h('button', { class: 'tbtn chop', 'aria-label': 'Chop', onpointerdown: () => g.touchChop() }, 'Chop')));
 }
 
 // ---------- solo: the sim runs in this browser ----------
