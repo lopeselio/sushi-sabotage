@@ -416,3 +416,7 @@ code { font-size: 12px; color: var(--dim); }
 }
 .mode.multi .big { margin-top: 4px; }
 .tbtns { display: flex; align-items: flex-end; }
+/* mid-width screens: what you hold sits above the card row, not beside it */
+@media (min-width: 721px) and (max-width: 1400px) {
+  .h-bl { bottom: calc(var(--hand-h) + 20px); max-width: 300px; }
+}
