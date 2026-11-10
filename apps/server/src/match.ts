@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { CARDS, botAccuse, results, sealOf, sha256Hex, stateHash, type Accusation, type Card, type ChefSetup, type Result, type Setup, type State } from '@sushi/rules';
+import { CARDS, RULES_VERSION, botAccuse, results, sealOf, sha256Hex, stateHash, taggedSeed, type Accusation, type BotSkill, type Card, type ChefSetup, type Result, type Setup, type State } from '@sushi/rules';
 import { CHEF_AGENTS, agentChef, agentLoadout, scoutedRival, type AgentDef } from './agents.ts';
 import { call, view } from './chain.ts';
 import { config } from './config.ts';
@@ -67,13 +67,18 @@ export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = 
   return { seats: out, fee: (anyHumanChef || opts.league) && allApproved && out.some((x) => x.chef) ? RANKED_FEE : 0 };
 }
 
-export function setupFor(seed: string, seats: SeatPlan[]): Setup {
+/**
+ * The sim setup. With a difficulty (solo shifts and rooms) it's a rules-v2 match and every AI chef
+ * plays at that level; without one (the AI league) it's rules v1 and each chef plays at its own
+ * persona skill, exactly as before.
+ */
+export function setupFor(seed: string, seats: SeatPlan[], difficulty?: BotSkill): Setup {
   const chefs: ChefSetup[] = seats.map((s) => {
     const loadout: Partial<Record<Card, number>> = {};
     (s.loadout ?? []).forEach((n, k) => { if (n > 0) loadout[CARDS[k]] = n; });
     const c: ChefSetup = { name: s.name, loadout };
     if (s.kind === 'bot') {
-      c.bot = s.agent?.skill ?? 'normal';
+      c.bot = difficulty ?? s.agent?.skill ?? 'normal';
       // a scouted rival who's in this match becomes the bot's preferred target
       const rival = s.agent ? scoutedRival(s.agent) : null;
       const at = rival ? seats.findIndex((x) => x.chef === rival) : -1;
@@ -81,12 +86,13 @@ export function setupFor(seed: string, seats: SeatPlan[]): Setup {
     }
     return c;
   });
-  return { seed, chefs };
+  return difficulty ? { seed, chefs, rulesVersion: RULES_VERSION, difficulty } : { seed, chefs };
 }
 
 export class ChainMatch {
   readonly id = newId();
-  readonly seed = randomBytes(16).toString('hex');
+  /** the secret seed; it also names the rules version and difficulty, so its hash commits to them */
+  readonly seed: string;
   readonly rec: MatchRecord;
   /** the sim setup, built from this match's own secret seed */
   readonly setup: Setup;
@@ -94,8 +100,10 @@ export class ChainMatch {
   private pending: string[] = [];
   private flushing: Promise<void> = Promise.resolve();
 
-  constructor(mode: MatchRecord['mode'], readonly seats: SeatPlan[], readonly fee: number) {
-    this.setup = setupFor(this.seed, seats);
+  constructor(mode: MatchRecord['mode'], readonly seats: SeatPlan[], readonly fee: number, readonly difficulty?: BotSkill) {
+    const hex = randomBytes(16).toString('hex');
+    this.seed = difficulty ? taggedSeed(hex, difficulty) : hex;
+    this.setup = setupFor(this.seed, seats, difficulty);
     this.rec = {
       id: this.id, mode, createdAt: Date.now(), setup: this.setup,
       seats: seats.map((s) => ({ chef: s.chef ?? null, name: s.name, kind: s.kind, account: s.account })),

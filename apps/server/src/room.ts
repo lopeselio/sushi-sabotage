@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import {
-  CARDS, MAX_CHEFS, SHIFT_TICKS, TICK_HZ, createState, step, viewFor,
-  type Accusation, type Input, type Result, type SimEvent, type State,
+  CARDS, DIFFICULTIES, MAX_CHEFS, SHIFT_TICKS, TICK_HZ, createState, step, viewFor,
+  type Accusation, type BotSkill, type Input, type Result, type SimEvent, type State,
 } from '@sushi/rules';
 import { CHEF_AGENTS, taunt, type AgentDef } from './agents.ts';
 import { ChainMatch, planSeats, type SeatPlan } from './match.ts';
@@ -40,6 +40,8 @@ function code(): string {
 export class Room {
   readonly code = code();
   phase: Phase = 'lobby';
+  /** AI chef difficulty, picked by the host in the lobby */
+  difficulty: BotSkill = 'normal';
   members: Member[] = [];
   private state: State | null = null;
   private match: ChainMatch | null = null;
@@ -77,6 +79,14 @@ export class Room {
     this.broadcastRoom();
   }
 
+  setDifficulty(by: WebSocket, level: string): void {
+    if (this.phase !== 'lobby' || this.seatOf(by) !== this.hostIdx) return;
+    const d = DIFFICULTIES.find((x) => x === level);
+    if (!d) return;
+    this.difficulty = d;
+    this.broadcastRoom();
+  }
+
   kick(by: WebSocket, seat: number): void {
     if (this.phase !== 'lobby' || this.seatOf(by) !== this.hostIdx || seat === this.hostIdx) return;
     const m = this.members[seat];
@@ -106,7 +116,7 @@ export class Room {
     } else {
       // mid-shift: an AI chef takes over the pod so the match stays fair for everyone else
       m.ws = null;
-      if (this.state && this.phase === 'playing' && !this.state.chefs[i].bot) m.inputs.push({ takeover: 'normal' });
+      if (this.state && this.phase === 'playing' && !this.state.chefs[i].bot) m.inputs.push({ takeover: this.difficulty });
     }
     if (!this.members.some((x) => x.ws)) { this.stop(); rooms.delete(this.code); return; }
     this.broadcastRoom();
@@ -145,7 +155,7 @@ export class Room {
 
   private broadcastRoom(): void {
     const seats = this.members.map((m) => ({ name: m.name, kind: m.bot ? 'bot' : 'human', ready: m.ready, signedIn: !!m.account, here: !!m.ws || !!m.bot }));
-    this.members.forEach((m, i) => send(m.ws, { t: 'room', code: this.code, phase: this.phase, seats, you: i, host: i === this.hostIdx }));
+    this.members.forEach((m, i) => send(m.ws, { t: 'room', code: this.code, phase: this.phase, difficulty: this.difficulty, seats, you: i, host: i === this.hostIdx }));
   }
 
   private async start(): Promise<void> {
@@ -157,11 +167,11 @@ export class Room {
       : { name: m.name, kind: m.account ? 'human' : 'guest', account: m.account ?? undefined, loadout: m.loadout }));
     const { seats, fee } = await planSeats(plans);
     // the match's secret seed drives the orders; only its hash goes onchain at create
-    const match = new ChainMatch('room', seats, fee);
+    const match = new ChainMatch('room', seats, fee, this.difficulty);
     this.match = match;
     this.state = createState(match.setup);
     const startsAt = Date.now() + COUNTDOWN_MS;
-    this.members.forEach((m, i) => send(m.ws, { t: 'start', you: i, matchId: match.id, startsAt, names: seats.map((s) => s.name), ranked: fee > 0, fee, seedHash: match.rec.seedHash }));
+    this.members.forEach((m, i) => send(m.ws, { t: 'start', you: i, matchId: match.id, startsAt, names: seats.map((s) => s.name), difficulty: this.difficulty, ranked: fee > 0, fee, seedHash: match.rec.seedHash }));
     // one AI chef taunts (TEE-signed line), without holding up the countdown
     const bot = this.members.find((m) => m.bot)?.bot;
     if (bot) void taunt(bot, seats.filter((s) => s.agent !== bot).map((s) => s.name)).then((line) => { match.rec.lines.push(line); this.members.forEach((m) => send(m.ws, { t: 'line', who: line.who, text: line.text, signed: !!line.signature })); });
@@ -227,7 +237,7 @@ export class Room {
     const acc = [...this.match.botAccusations(s), ...[...this.accusations.values()].flat()];
     const { results, settled } = this.match.finish(s, acc);
     const reveal = s.sab.map((x) => ({ caster: x.caster, target: x.target, card: x.card, tick: x.tick, blocked: x.blocked, fizzled: x.fizzled }));
-    const msg = (txs: { what: string; hash: string }[]): unknown => ({ t: 'results', results, reveal, accusations: acc, matchId: this.match!.id, txs: txs.map((x) => ({ ...x, url: explorerTx(x.hash) })), ranked: this.match!.rec.ranked, error: this.match!.rec.error });
+    const msg = (txs: { what: string; hash: string }[]): unknown => ({ t: 'results', results, reveal, accusations: acc, matchId: this.match!.id, difficulty: this.difficulty, txs: txs.map((x) => ({ ...x, url: explorerTx(x.hash) })), ranked: this.match!.rec.ranked, error: this.match!.rec.error });
     this.resultsMsg = msg(this.match.rec.txs);
     this.members.forEach((m) => send(m.ws, this.resultsMsg));
     void settled.then(() => { this.resultsMsg = msg(this.match!.rec.txs); this.members.forEach((m) => send(m.ws, this.resultsMsg)); setTimeout(() => rooms.delete(this.code), 10 * 60_000); });
