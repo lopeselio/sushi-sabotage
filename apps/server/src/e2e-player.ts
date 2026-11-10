@@ -136,12 +136,7 @@ const fixerOffer = await api<{ offer: { offerId: number } | null; outcome: { pri
 await relay('accept_offer', { offer_id: fixerOffer.offer!.offerId });
 await call('mt_transfer', { receiver_id: `kenji.${CONTRACT}`, token_id: 'dull_knife', amount: '1' }, 1n);
 ok(`kenji now holds ${(await view<string>('mt_balance_of', { account_id: `kenji.${CONTRACT}`, token_id: 'dull_knife' }))} dull_knife`);
-step('spend energy on two more shifts, then buy an energy pack with 0.1 NEAR (an ordinary transaction)');
-for (let k = 0; k < 2; k++) {
-  const s2 = await api<{ matchId: string }>('/solo/start', { name: 'E2E Chef', bots: 1, loadout: [] });
-  await api('/solo/finish', { matchId: s2.matchId, log: [], accusations: [] });
-}
-for (let k = 0; k < 20; k++) { if ((await api<{ econ: Econ }>('/me')).econ.energy <= 700) break; await new Promise((r) => setTimeout(r, 2000)); }
+step('buy an energy pack with 0.1 NEAR (an ordinary transaction)');
 ok(`energy before the pack: ${(await api<{ econ: Econ }>('/me')).econ.energy}`);
 const pack = await callTx<number>('buy_energy', { chef }, 100n * MILLINEAR);
 ok(`energy pack: now ${pack.value}: ${txUrl(pack.tx)}`);
