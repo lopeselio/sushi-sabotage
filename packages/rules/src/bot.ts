@@ -18,7 +18,7 @@ export interface BotState { skill: BotSkill; rng: Rng; wait: number; rival: numb
 
 export const newBot = (skill: BotSkill, seed: string, rival = -1): BotState => ({ skill, rng: { s: seedFrom(`bot:${seed}`) }, wait: 0, rival });
 
-interface Goal { counter: number; action: 'act' | 'chop' }
+export interface Goal { counter: number; action: 'act' | 'chop' }
 
 const ASM = counterAt(4, 3); // the bot assembles its dish on the middle of the island
 const reachable = (c: Counter): boolean => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => counterAt(c.x + dx, c.z + dz) === -1);
@@ -192,7 +192,7 @@ export function plan(s: State, i: number): Goal | null {
 const cellKey = (x: number, z: number): number => z * POD_W + x;
 
 /** Next cell on the shortest floor path from (sx,sz) to any floor cell beside `counter`. */
-function route(sx: number, sz: number, counter: Counter): { tx: number; tz: number; nx: number; nz: number } | null {
+export function route(sx: number, sz: number, counter: Counter): { tx: number; tz: number; nx: number; nz: number } | null {
   const goals = new Set<number>();
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const gx = counter.x + dx, gz = counter.z + dz;
