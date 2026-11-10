@@ -3,6 +3,7 @@ import { CARD_INFO, CARDS, stateHash, type Card, type LogEntry, type Result, typ
 import { api, explorer, explorerAccount, type Me, type ServerConfig } from './api.ts';
 import { isMuted, setMuted, sfx } from './audio.ts';
 import { RoomShift, SoloShift, type Shift } from './game.ts';
+import { chefCard, chefSlot, resultsCta, type ChefHooks } from './chef.ts';
 import { Walkthrough, howToPlay, onboarded, tutorialDone, welcome } from './onboarding.ts';
 import { CHEF_COLORS, KitchenScene } from './scene.ts';
 import { $, h, modalOpen, mount, saved, toast } from './ui.ts';
@@ -77,6 +78,25 @@ function logo(small = false): HTMLElement {
 }
 
 let page = 'title';
+
+/** What the chef module (chef.ts) needs from the page. */
+const chefHooks: ChefHooks = {
+  me: () => me,
+  refresh: async () => {
+    me = await api<Me>('/me').catch(() => me);
+    if (page === 'chef') void myChef();
+    else if (page === 'title') title();
+    else fillSlot('results-cta', lastCta());
+  },
+  signIn: () => doSignIn(),
+  defaultName: () => chefName(),
+};
+let lastCta: () => HTMLElement | null = () => null;
+/** Puts the chef module's content into one of the page's slots (if it's on screen). */
+function fillSlot(id: string, el: HTMLElement | null): void {
+  const slot = document.getElementById(id);
+  if (slot) slot.replaceChildren(...(el ? [el] : []));
+}
 function nav(): HTMLElement {
   const item = (id: string, label: string, fn: () => void): HTMLElement => h('button', { class: page === id ? 'on' : '', 'aria-current': page === id ? 'page' : undefined, onclick: fn }, label);
   return h('nav', { class: 'nav' },
@@ -141,6 +161,7 @@ function title(): void {
       h('button', { class: 'link', onclick: howTo }, 'How to play'),
       h('button', { class: 'link', onclick: () => welcome(() => solo(3, 'easy')) }, 'The intro again')),
     h('p', { class: 'foot' }, 'NEAR testnet · contract ', h('a', { href: explorerAccount(cfg?.contract ?? ''), target: '_blank' }, cfg?.contract ?? '…'), ' · part of the NEAR Arcade')));
+  fillSlot('chef-slot', chefSlot(chefHooks, () => void myChef()));
 }
 
 function stopShift(): void { shift?.stop(); shift = null; hud.replaceChildren(); }
@@ -161,7 +182,9 @@ function countdown(then: () => void, line?: { who: string; text: string; signed:
 
 async function solo(rivals: number, difficulty: Difficulty): Promise<void> {
   try {
-    const r = await api<{ matchId: string; setup: { seed: string; chefs: { name: string }[] }; ranked: boolean; fee: number; seedHash: string; line: { who: string; text: string; signed: boolean } | null }>('/solo/start', { name: chefName(), bots: rivals, loadout: loadoutChoice(), difficulty });
+    const r = await api<{ matchId: string; setup: { seed: string; chefs: { name: string }[] }; ranked: boolean; fee: number; seedHash: string; line: { who: string; text: string; signed: boolean } | null; noEnergy?: boolean; recorded?: boolean }>('/solo/start', { name: chefName(), bots: rivals, loadout: loadoutChoice(), difficulty });
+    if (r.noEnergy) toast('Your chef is out of energy: this shift plays as a guest and isn’t recorded', 'bad');
+    soloRecord = { recorded: !!r.recorded, noEnergy: !!r.noEnergy };
     scene.overview = false;
     lastSolo = { rivals, difficulty };
     const coach = !tutorialDone();
@@ -178,6 +201,8 @@ async function solo(rivals: number, difficulty: Difficulty): Promise<void> {
 }
 
 let lastSolo: { rivals: number; difficulty: Difficulty } | null = null;
+/** whether the running solo shift goes on the chef NFT (a guest's or an out-of-energy shift doesn't) */
+let soloRecord = { recorded: false, noEnergy: false };
 
 /** How to play during a shift: a solo, unranked shift pauses while it's open. */
 function shiftHelp(s: Shift): void {
@@ -203,7 +228,7 @@ async function soloEnd(matchId: string, state: State, log: LogEntry[], ranked: b
   mount(ui, h('div', { class: 'panel center' }, h('h2', { class: 'display' }, 'Shift over!'), h('p', {}, 'The referee is re-running your shift to check it…'), h('div', { class: 'spinner', 'aria-hidden': 'true' })));
   try {
     const r = await api<ResultsMsg>('/solo/finish', { matchId, log, stateHash: stateHash(state), accusations });
-    results({ ...r, txs: [], names, you: 0, solo: true });
+    results({ ...r, txs: [], names, you: 0, solo: true, ...soloRecord });
     pollTxs(matchId);
   } catch (e) { toast((e as Error).message, 'bad'); title(); }
 }
@@ -290,7 +315,7 @@ function whodunitPanel(m: WhoMsg, you: number, submit: (list: { sab: number; acc
 interface ResultsMsg { difficulty?: string; verified?: boolean; stateHash?: string; results: Result[]; reveal: { caster: number; target: number; card: Card; tick: number; blocked: boolean; fizzled: boolean }[]; accusations: { victim: number; sab: number; accused: number }[]; matchId: string; txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string }
 const fmtClock = (tick: number): string => { const t = Math.floor(tick / 20); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 
-function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean }): void {
+function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean; recorded?: boolean; noEnergy?: boolean }): void {
   stopShift();
   page = 'results';
   scene.overview = true;
@@ -332,6 +357,11 @@ function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean 
       r.solo && lastSolo ? h('button', { class: 'big', onclick: () => solo(lastSolo!.rivals, lastSolo!.difficulty) }, 'Play again') : null,
       h('button', { class: r.solo && lastSolo ? 'ghost' : 'big', onclick: title }, 'Back to the kitchen'),
       h('a', { class: 'btn ghost', href: `/api/match/${r.matchId}`, target: '_blank' }, 'Proof bundle (JSON)'))));
+  // a guest is invited to sign in and mint; a chef sees its energy (refreshed after the shift)
+  const recorded = r.recorded ?? !!me?.chef;
+  lastCta = () => resultsCta(chefHooks, recorded, !!r.noEnergy);
+  fillSlot('results-cta', lastCta());
+  if (me) void api<Me>('/me').then((m) => { me = m; if (page === 'results') fillSlot('results-cta', lastCta()); }).catch(() => undefined);
 }
 
 function proofLinks(r: { txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string; matchId: string }): HTMLElement {
@@ -397,36 +427,13 @@ async function market(): Promise<void> {
 async function myChef(): Promise<void> {
   stopShift();
   page = 'chef';
-  if (!me) {
-    mount(ui, nav(), h('div', { class: 'panel center' }, h('h2', {}, 'Your Chef NFT'),
-      h('p', {}, 'Sign in with a NEAR testnet wallet to mint a free Chef NFT. Its purse, card inventory and record live on the token itself: sell the chef and they go with it.'), walletBadge()));
-    return;
-  }
-  if (!me.chef) {
-    const name = h('input', { value: store.name || 'Chef', maxlength: 20 });
-    mount(ui, nav(), h('div', { class: 'panel center' }, h('h2', {}, 'Mint your chef'), h('p', {}, 'Free. Starts with 100 ryo. Your wallet asks you to approve it once; the game pays the gas.'), name,
-      h('button', { class: 'big', onclick: async () => { try { await call('mint_chef', { name: name.value.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20) || 'Chef' }); me = await api<Me>('/me'); toast(`Minted ${me.chef ?? 'your chef'}`, 'good'); myChef(); } catch (e) { toast((e as Error).message, 'bad'); } } }, 'Mint chef')));
-    return;
-  }
-  const t = me.token!;
-  const raw = me.raw!;
-  const extra = JSON.parse(t.metadata.extra) as { level: number; title: string; stats: Record<string, number> };
-  const owned = await fetchOwned().catch(() => []);
-  const act = (label: string, fn: () => Promise<unknown>): HTMLElement => h('button', { onclick: async () => { try { await fn(); toast(`${label}: done`, 'good'); me = await api<Me>('/me'); myChef(); } catch (e) { toast((e as Error).message, 'bad'); } } }, label);
-  mount(ui, nav(), h('div', { class: 'panel chef' },
-    h('div', { class: 'nft' }, h('img', { src: t.metadata.media, alt: t.metadata.title })),
-    h('div', {},
-      h('h2', {}, t.metadata.title),
-      h('p', { class: 'dim' }, t.metadata.description),
-      h('p', {}, `Purse ${raw.purse} ryo · Level ${extra.level} ${extra.title} · ranked fee approval: ${raw.kind.Chef?.approved_fee ?? 0} ryo`),
-      h('p', {}, `Cards: ${CARDS.map((c, k) => `${CARD_INFO[c].name} ×${raw.kind.Chef?.inventory[k] ?? 0}`).join(' · ')}`),
-      h('div', { class: 'row' },
-        act('Claim daily 50 ryo', () => call('claim_daily', { chef: me!.chef })),
-        act('Enable ranked (10 ryo/match)', () => call('approve_referee', { chef: me!.chef, max_fee: 10 })),
-        act('Disable ranked', () => call('approve_referee', { chef: me!.chef, max_fee: 0 }))),
-      h('h3', {}, 'Your tokens'),
-      h('div', { class: 'owned' }, ...owned.map((o) => h('div', { class: 'tok' }, h('img', { src: o.metadata.media }), h('small', {}, o.metadata.title)))),
-      h('p', { class: 'dim' }, 'Recipe Scrolls earn 2 ryo from the pot every time anyone serves their recipe in a ranked match. Move a scroll’s earnings into your chef with move_purse.'))));
+  const [card, owned] = await Promise.all([chefCard(chefHooks), fetchOwned().catch(() => [])]);
+  if (page !== 'chef') return;
+  const others = owned.filter((o) => o.token_id !== me?.chef);
+  mount(ui, nav(), card, ...(others.length ? [h('div', { class: 'panel' },
+    h('h3', {}, 'Your other tokens'),
+    h('div', { class: 'owned' }, ...others.map((o) => h('div', { class: 'tok' }, h('img', { src: o.metadata.media }), h('small', {}, o.metadata.title)))),
+    h('p', { class: 'dim' }, 'Recipe Scrolls earn 2 ryo from the pot every time anyone serves their recipe in a ranked match. Move a scroll’s earnings into your chef with move_purse.'))] : []));
 }
 
 async function fetchOwned(): Promise<{ token_id: string; metadata: { title: string; media: string; description: string } }[]> {
