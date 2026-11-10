@@ -14,7 +14,37 @@ let cfg: ServerConfig | null = null;
 let me: Me | null = null;
 let shift: Shift | null = null;
 const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
-const store = { get name(): string { try { return localStorage.getItem('sushi.name') ?? ''; } catch { return ''; } }, set name(v: string) { try { localStorage.setItem('sushi.name', v); } catch { /* */ } } };
+const store = {
+  get name(): string { try { return localStorage.getItem('sushi.name') ?? ''; } catch { return ''; } },
+  set name(v: string) { try { localStorage.setItem('sushi.name', v); } catch { /* */ } },
+  get difficulty(): Difficulty { try { const d = localStorage.getItem('sushi.difficulty'); return d === 'easy' || d === 'hard' ? d : 'normal'; } catch { return 'normal'; } },
+  set difficulty(v: Difficulty) { try { localStorage.setItem('sushi.difficulty', v); } catch { /* */ } },
+};
+
+// ---------- AI chef difficulty ----------
+
+type Difficulty = 'easy' | 'normal' | 'hard';
+const LEVELS: { id: Difficulty; label: string; hint: string }[] = [
+  { id: 'easy', label: 'Easy', hint: 'Slow, clumsy AI chefs that burn things and rarely sabotage. Good for a first shift.' },
+  { id: 'normal', label: 'Normal', hint: 'About as quick as you. They sabotage now and then.' },
+  { id: 'hard', label: 'Hard', hint: 'Quick, tidy AI chefs that sabotage early and gang up on whoever leads.' },
+];
+const levelLabel = (d: string | undefined): string => LEVELS.find((l) => l.id === d)?.label ?? 'Normal';
+
+/** Easy / Normal / Hard. Remembered in this browser. */
+function difficultyPicker(current: Difficulty, pick: (d: Difficulty) => void): HTMLElement {
+  const hint = h('p', { class: 'dim small' }, LEVELS.find((l) => l.id === current)!.hint);
+  const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'AI chef difficulty' }, ...LEVELS.map((l) => h('button', {
+    class: l.id === current ? 'on' : '', role: 'radio', 'aria-checked': String(l.id === current), title: l.hint,
+    onclick: (e: Event) => {
+      store.difficulty = l.id;
+      [...seg.children].forEach((b) => { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-checked', String(b === e.currentTarget)); });
+      hint.textContent = l.hint;
+      pick(l.id);
+    },
+  }, l.label)));
+  return h('div', { class: 'difficulty' }, h('small', { class: 'dim' }, 'AI chefs'), seg, hint);
+}
 
 // ---------- boot ----------
 
@@ -70,6 +100,7 @@ function title(): void {
   scene.overview = true;
   const name = h('input', { value: chefName(), maxlength: 20, placeholder: 'Your chef name', oninput: (e: Event) => { store.name = (e.target as HTMLInputElement).value.replace(/[^A-Za-z0-9 _-]/g, ''); } });
   let rivals = 3;
+  let level = store.difficulty;
   const rivalBtns = h('div', { class: 'seg' }, ...[1, 2, 3].map((n) => h('button', { class: n === rivals ? 'on' : '', onclick: (e: Event) => { rivals = n; [...(e.target as HTMLElement).parentElement!.children].forEach((b, k) => b.classList.toggle('on', k + 1 === n)); } }, `${n} rival${n > 1 ? 's' : ''}`)));
   const code = h('input', { placeholder: 'ROOM', maxlength: 4, class: 'code', oninput: (e: Event) => { (e.target as HTMLInputElement).value = (e.target as HTMLInputElement).value.toUpperCase(); } });
   mount(ui, nav(), h('div', { class: 'panel title' },
@@ -77,7 +108,7 @@ function title(): void {
     h('p', { class: 'tag' }, 'Roll it, sear it, serve it. Wreck your rivals’ dishes while they cook. Nobody sees who did it until the shift ends.'),
     walletBadge(),
     h('label', {}, 'Chef name', name),
-    h('div', { class: 'row' }, h('div', { class: 'col' }, h('h3', {}, 'Solo shift'), h('p', { class: 'dim' }, 'You vs AI chefs with their own NEAR wallets.'), rivalBtns, h('button', { class: 'big', onclick: () => solo(rivals) }, 'Start shift')),
+    h('div', { class: 'row' }, h('div', { class: 'col' }, h('h3', {}, 'Solo shift'), h('p', { class: 'dim' }, 'You vs AI chefs with their own NEAR wallets.'), rivalBtns, difficultyPicker(level, (d) => { level = d; }), h('button', { class: 'big', onclick: () => solo(rivals, level) }, 'Start shift')),
       h('div', { class: 'col' }, h('h3', {}, 'Multiplayer'), h('p', { class: 'dim' }, '2–4 chefs. Fill empty pods with AI.'), h('button', { class: 'big', onclick: () => room({ t: 'create' }) }, 'Create room'), h('div', { class: 'join' }, code, h('button', { onclick: () => room({ t: 'join', code: code.value }) }, 'Join')))),
     h('p', { class: 'foot' }, 'NEAR testnet · contract ', h('a', { href: explorerAccount(cfg?.contract ?? ''), target: '_blank' }, cfg?.contract ?? '…'), ' · part of the NEAR Arcade')));
 }
@@ -98,9 +129,9 @@ function countdown(then: () => void, line?: { who: string; text: string; signed:
 
 // ---------- solo ----------
 
-async function solo(rivals: number): Promise<void> {
+async function solo(rivals: number, difficulty: Difficulty): Promise<void> {
   try {
-    const r = await api<{ matchId: string; setup: { seed: string; chefs: { name: string }[] }; ranked: boolean; fee: number; seedHash: string; line: { who: string; text: string; signed: boolean } | null }>('/solo/start', { name: chefName(), bots: rivals, loadout: loadoutChoice() });
+    const r = await api<{ matchId: string; setup: { seed: string; chefs: { name: string }[] }; ranked: boolean; fee: number; seedHash: string; line: { who: string; text: string; signed: boolean } | null }>('/solo/start', { name: chefName(), bots: rivals, loadout: loadoutChoice(), difficulty });
     scene.overview = false;
     countdown(() => {
       shift = new SoloShift(scene, r.setup as never, hud, async ({ state, log }) => {
@@ -144,7 +175,11 @@ function room(first: { t: 'create' } | { t: 'join'; code: string }): void {
   ws = sock;
   let names: string[] = [];
   let you = 0;
-  sock.onopen = () => { sock.send(JSON.stringify({ t: 'hello', name: chefName() })); sock.send(JSON.stringify(first)); };
+  sock.onopen = () => {
+    sock.send(JSON.stringify({ t: 'hello', name: chefName() }));
+    sock.send(JSON.stringify(first));
+    if (first.t === 'create') sock.send(JSON.stringify({ t: 'difficulty', level: store.difficulty })); // the host's last pick
+  };
   sock.onclose = () => { if (ws === sock && shift instanceof RoomShift && !shift.ended) { toast('Disconnected from the kitchen', 'bad'); title(); } };
   sock.onmessage = (e) => {
     const m = JSON.parse(String(e.data)) as Record<string, unknown> & { t: string };
@@ -161,7 +196,7 @@ function room(first: { t: 'create' } | { t: 'join'; code: string }): void {
   };
 }
 
-interface LobbyMsg { code: string; phase: string; seats: { name: string; kind: string; ready: boolean; signedIn: boolean; here: boolean }[]; you: number; host: boolean }
+interface LobbyMsg { code: string; phase: string; difficulty?: Difficulty; seats: { name: string; kind: string; ready: boolean; signedIn: boolean; here: boolean }[]; you: number; host: boolean }
 function lobby(sock: WebSocket, m: LobbyMsg): void {
   if (m.phase !== 'lobby') return;
   const mine = m.seats[m.you];
@@ -172,6 +207,9 @@ function lobby(sock: WebSocket, m: LobbyMsg): void {
       m.host && i !== m.you ? h('button', { class: 'link', onclick: () => sock.send(JSON.stringify({ t: 'kick', seat: i })) }, 'remove') : null))),
     h('div', { class: 'row' },
       m.host && m.seats.length < 4 ? h('button', { onclick: () => sock.send(JSON.stringify({ t: 'addBot' })) }, 'Add AI chef') : null,
+      m.host
+        ? difficultyPicker(m.difficulty ?? 'normal', (level) => sock.send(JSON.stringify({ t: 'difficulty', level })))
+        : h('p', { class: 'dim' }, `AI chefs: ${levelLabel(m.difficulty)} (the host picks)`),
       h('button', { class: 'big', onclick: () => sock.send(JSON.stringify({ t: 'ready', ready: !mine.ready, loadout: loadoutChoice() })) }, mine.ready ? 'Not ready' : 'Ready'),
       h('button', { class: 'ghost', onclick: () => { sock.send(JSON.stringify({ t: 'leave' })); sock.close(); title(); } }, 'Leave'))));
 }
@@ -199,7 +237,7 @@ function whodunitPanel(m: WhoMsg, you: number, submit: (list: { sab: number; acc
     h('button', { class: 'big', onclick: send }, 'Seal my accusations')));
 }
 
-interface ResultsMsg { verified?: boolean; stateHash?: string; results: Result[]; reveal: { caster: number; target: number; card: Card; tick: number; blocked: boolean; fizzled: boolean }[]; accusations: { victim: number; sab: number; accused: number }[]; matchId: string; txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string }
+interface ResultsMsg { difficulty?: string; verified?: boolean; stateHash?: string; results: Result[]; reveal: { caster: number; target: number; card: Card; tick: number; blocked: boolean; fizzled: boolean }[]; accusations: { victim: number; sab: number; accused: number }[]; matchId: string; txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string }
 function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean }): void {
   stopShift();
   scene.overview = true;
@@ -209,6 +247,7 @@ function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean 
   if (won) sfx.deliver();
   mount(ui, nav(), h('div', { class: 'panel results' },
     h('h2', {}, won ? 'You ran the best kitchen tonight!' : 'Shift results'),
+    r.difficulty ? h('p', { class: 'dim' }, `AI chefs: ${levelLabel(r.difficulty)}`) : null,
     h('table', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Chef'), h('th', {}, 'Shift'), h('th', {}, 'Whodunit'), h('th', {}, 'Final')),
       ...sorted.map((x) => h('tr', { class: x.chef === r.you ? 'you' : '' }, h('td', {}, String(x.rank)), h('td', { style: `color:${hex(CHEF_COLORS[x.chef % 4])}` }, x.name), h('td', {}, String(x.shiftScore)), h('td', {}, x.accuseDelta ? (x.accuseDelta > 0 ? `+${x.accuseDelta}` : String(x.accuseDelta)) : '—'), h('td', {}, h('b', {}, String(x.final)))))),
     h('h3', {}, 'The sealed sabotage log, opened'),

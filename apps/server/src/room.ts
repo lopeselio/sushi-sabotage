@@ -237,7 +237,7 @@ export class Room {
     const acc = [...this.match.botAccusations(s), ...[...this.accusations.values()].flat()];
     const { results, settled } = this.match.finish(s, acc);
     const reveal = s.sab.map((x) => ({ caster: x.caster, target: x.target, card: x.card, tick: x.tick, blocked: x.blocked, fizzled: x.fizzled }));
-    const msg = (txs: { what: string; hash: string }[]): unknown => ({ t: 'results', results, reveal, accusations: acc, matchId: this.match!.id, difficulty: this.difficulty, txs: txs.map((x) => ({ ...x, url: explorerTx(x.hash) })), ranked: this.match!.rec.ranked, error: this.match!.rec.error });
+    const msg = (txs: { what: string; hash: string }[]): unknown => ({ t: 'results', results, reveal, accusations: acc, matchId: this.match!.id, difficulty: this.members.some((m) => m.bot) ? this.difficulty : undefined, txs: txs.map((x) => ({ ...x, url: explorerTx(x.hash) })), ranked: this.match!.rec.ranked, error: this.match!.rec.error });
     this.resultsMsg = msg(this.match.rec.txs);
     this.members.forEach((m) => send(m.ws, this.resultsMsg));
     void settled.then(() => { this.resultsMsg = msg(this.match!.rec.txs); this.members.forEach((m) => send(m.ws, this.resultsMsg)); setTimeout(() => rooms.delete(this.code), 10 * 60_000); });

@@ -119,3 +119,5 @@ code { font-size: 12px; color: var(--dim); }
   .chef { grid-template-columns: 1fr; }
   .card { min-width: 84px; padding: 6px 8px; }
 }
+.difficulty { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.difficulty .small { font-size: 12px; margin: 0; max-width: 34ch; }
