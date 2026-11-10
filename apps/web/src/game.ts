@@ -1,15 +1,22 @@
 import {
-  CARD_INFO, CARDS, ITEM_LABEL, MISCHIEF_MAX, RECIPES, SHIFT_TICKS, TICK_HZ, canCast, createState, moveChef, nextStep, step,
-  type Card, type Chef, type Input, type LogEntry, type SimEvent, type Setup, type State,
+  CARD_INFO, CARDS, RECIPES, TICK_HZ, canCast, createState, moveChef, nextStep, step,
+  type Card, type Chef, type Hint, type Input, type LogEntry, type SimEvent, type Setup, type State,
 } from '@sushi/rules';
-import { sfx } from './audio.ts';
-import { CHIP, CHIP_LABEL } from './food.ts';
+import { isMuted, setMuted, sfx } from './audio.ts';
+import { Hud } from './hud.ts';
 import { CHEF_COLORS, type KitchenScene } from './scene.ts';
-import { fmtTime, h, mount, toast } from './ui.ts';
+import { h, mount, modalOpen } from './ui.ts';
 
 // One shift on screen, whether the sim runs here (solo) or on the server (multiplayer).
 
 export interface ShiftEnd { state: State; log: LogEntry[] }
+
+/** Something that follows the shift as it plays, e.g. the first-shift walkthrough. */
+export interface ShiftWatcher {
+  events(ev: SimEvent[]): void;
+  frame(): void;
+  action(what: 'target' | 'view' | 'help'): void;
+}
 
 const KEYS_UP = ['KeyW', 'ArrowUp'], KEYS_DOWN = ['KeyS', 'ArrowDown'], KEYS_LEFT = ['KeyA', 'ArrowLeft'], KEYS_RIGHT = ['KeyD', 'ArrowRight'];
 const KEYS_ACT = ['KeyE', 'Space', 'KeyJ'], KEYS_CHOP = ['KeyF', 'KeyK'];
@@ -28,6 +35,15 @@ export abstract class Shift {
   private onBlur = (): void => { this.keys.clear(); this.updateMove(); };
   ended = false;
   hints = Shift.hintsDefault();
+  /** Set by the page: opens the How to play sheet. */
+  openHelp: () => void = () => {};
+  watcher: ShiftWatcher | null = null;
+  /** The walkthrough shows the hint itself and keeps the arrow on. */
+  coaching = false;
+  /** Solo, unranked: the sim stops while a sheet is open. */
+  canPause = false;
+  paused = false;
+  private ui!: Hud;
 
   /** Hints are on for your first three shifts, then off unless you turn them on (H). */
   static hintsDefault(): boolean {
@@ -38,7 +54,7 @@ export abstract class Shift {
     } catch { return true; }
   }
 
-  constructor(protected scene: KitchenScene, protected you: number, protected names: string[], hudRoot: HTMLElement) {
+  constructor(protected scene: KitchenScene, readonly you: number, protected names: string[], hudRoot: HTMLElement) {
     this.hud = hudRoot;
     scene.build(names, you);
     this.target = names.length > 1 ? (you + 1) % names.length : -1;
@@ -62,15 +78,17 @@ export abstract class Shift {
   }
 
   private key(e: KeyboardEvent): void {
-    if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+    if ((e.target as HTMLElement)?.tagName === 'INPUT' || modalOpen()) return;
+    if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) { e.preventDefault(); this.help(); return; }
     if (e.repeat && !KEYS_CHOP.includes(e.code)) { if ([...KEYS_ACT, 'Tab'].includes(e.code)) e.preventDefault(); return; }
     if ([...KEYS_UP, ...KEYS_DOWN, ...KEYS_LEFT, ...KEYS_RIGHT, ...KEYS_ACT, 'Tab'].includes(e.code)) e.preventDefault();
     this.keys.add(e.code);
     if (KEYS_ACT.includes(e.code)) this.send({ act: true });
     else if (KEYS_CHOP.includes(e.code)) this.send({ chop: true });
     else if (e.code === 'Tab' || e.code === 'KeyQ') this.cycleTarget();
-    else if (e.code === 'KeyV') this.scene.overview = !this.scene.overview;
-    else if (e.code === 'KeyH') { this.hints = !this.hints; try { localStorage.setItem('sushi.hints', this.hints ? 'on' : 'off'); } catch { /* */ } this.hudKey = ''; }
+    else if (e.code === 'KeyV') { this.scene.overview = !this.scene.overview; this.watcher?.action('view'); }
+    else if (e.code === 'KeyH') this.toggleHints();
+    else if (e.code === 'KeyM') { setMuted(!isMuted()); this.ui.syncMute(); }
     else if (/^Digit[1-6]$/.test(e.code)) this.playCard(CARDS[Number(e.code.slice(5)) - 1]);
     this.updateMove();
   }
@@ -97,9 +115,31 @@ export abstract class Shift {
     if (n < 2) return;
     let t = this.target;
     do t = (t + 1) % n; while (t === this.you);
-    this.target = t;
-    this.renderHud();
+    this.setTarget(t);
   }
+
+  setTarget(i: number): void {
+    if (i === this.you || i < 0 || i >= this.names.length) return;
+    this.target = i;
+    sfx.ui();
+    this.watcher?.action('target');
+  }
+
+  toggleHints(): void {
+    this.hints = !this.hints;
+    try { localStorage.setItem('sushi.hints', this.hints ? 'on' : 'off'); } catch { /* private mode */ }
+  }
+
+  help(): void {
+    this.keys.clear(); this.updateMove();
+    this.watcher?.action('help');
+    this.openHelp();
+  }
+
+  get hintText(): string { return this.hint; }
+  /** The hint planner's next step this frame (computed while hints or the walkthrough are on). */
+  get nextHint(): Hint | null { return this.hintNow; }
+  get isOverview(): boolean { return this.scene.overview; }
 
   playCard(card: Card): void {
     const s = this.state;
@@ -120,20 +160,30 @@ export abstract class Shift {
         case 'place': if (mine) sfx.place(); break;
         case 'trash': if (mine) sfx.trash(); break;
         case 'cooked': if (mine) sfx.cooked(); break;
-        case 'burn': if (mine) { sfx.burn(); toast('Burnt! −10', 'bad'); } break;
-        case 'deliver': if (mine) { sfx.deliver(); toast(`${RECIPES[e.recipe].name} +${e.points}${e.tip ? ` (tip ${e.tip})` : ''}`, 'good'); } break;
-        case 'wrong': if (mine) { sfx.wrong(); toast('Wrong dish −5', 'bad'); } break;
-        case 'expire': if (mine) { sfx.wrong(); toast(`${RECIPES[e.recipe].name} went cold −15`, 'bad'); } break;
+        case 'burn': if (mine) { sfx.burn(); this.floatOver('Burnt! −10', 'bad'); } break;
+        case 'deliver': if (mine) { sfx.deliver(); this.floatOver(`+${e.points}`, 'good', `${RECIPES[e.recipe].name}${e.tip ? ` · tip ${e.tip}` : ''}`); } break;
+        case 'wrong': if (mine) { sfx.wrong(); this.floatOver('Wrong dish −5', 'bad'); } break;
+        case 'expire': if (mine) { sfx.wrong(); this.floatOver(`−15`, 'bad', `${RECIPES[e.recipe].name} went cold`); } break;
+        case 'trash': if (mine) this.floatOver('−5', 'bad', 'binned'); break;
         case 'order': if (mine) sfx.order(); break;
-        case 'cast': if (e.caster === this.you) { sfx.cast(); toast(`You played ${CARD_INFO[e.card].name}${CARD_INFO[e.card].self ? '' : ` on ${this.names[e.target]}`}`); } break;
+        case 'cast': if (e.caster === this.you) { sfx.cast(); this.ui.banner(`You played ${CARD_INFO[e.card].name}`, CARD_INFO[e.card].self ? CARD_INFO[e.card].blurb : `on ${this.names[e.target]}. They won’t know it was you.`, 'info'); } break;
         case 'sabotaged':
           if (e.target === this.you) {
             sfx.sabotaged();
-            toast(e.blocked ? `Your Bamboo Shield blocked a ${CARD_INFO[e.card].name}!` : `Someone hit you with ${CARD_INFO[e.card].name}!${e.fizzled ? ' (it fizzled)' : ''}`, e.blocked ? 'good' : 'bad');
+            if (e.blocked) this.ui.banner('Shield up!', `Your Bamboo Shield blocked a ${CARD_INFO[e.card].name}.`, 'good');
+            else this.ui.banner(`Someone hit you with ${CARD_INFO[e.card].name}!`, e.fizzled ? 'It fizzled: nothing to hit.' : `${CARD_INFO[e.card].blurb} Remember it for Whodunit.`, 'bad');
           }
           break;
       }
     }
+    this.watcher?.events(ev);
+  }
+
+  private floatOver(text: string, kind: 'good' | 'bad', sub?: string): void {
+    const p = this.scene.podScreen(this.you);
+    const x = p?.x ?? innerWidth / 2, y = Math.max(140, (p?.y ?? innerHeight / 2) - 40);
+    this.ui.float(x, y, text, kind);
+    if (sub) this.ui.float(x, y + 34, sub, 'info');
   }
 
   private frame(t: number): void {
@@ -142,76 +192,29 @@ export abstract class Shift {
     this.tickLocal(dt);
     if (this.state) {
       this.scene.sync(this.state, dt);
-      const h = this.hints && !this.state.over ? nextStep(this.state, this.you) : null;
+      const on = (this.hints || this.coaching) && !this.state.over;
+      const h = on ? nextStep(this.state, this.you) : null;
       this.scene.setHint(h?.counter ?? -1);
-      this.hintText = h?.text ?? '';
-      this.renderHud();
+      this.hint = h?.text ?? '';
+      this.hintNow = h;
+      this.ui.update(this.state, { target: this.target, hint: this.hint, hints: this.hints, coach: this.coaching });
+      this.watcher?.frame();
     }
     this.scene.render(dt);
     this.raf = requestAnimationFrame((x) => this.frame(x));
   }
 
-  // ---------- HUD ----------
+  // ---------- HUD (hud.ts) ----------
 
-  private el: Record<string, HTMLElement> = {};
-  private hudKey = '';
-  private hintText = '';
+  private hint = '';
+  private hintNow: Hint | null = null;
 
   private buildHud(): void {
-    this.el.orders = h('div', { class: 'orders' });
-    this.el.top = h('div', { class: 'topbar' });
-    this.el.rivals = h('div', { class: 'rivals' });
-    this.el.cards = h('div', { class: 'cards' });
-    this.el.held = h('div', { class: 'held' });
-    this.el.help = h('div', { class: 'keys' }, 'WASD move · E pick/place · F chop · 1–6 cards · Tab target · V view all · H hints');
-    this.el.hint = h('div', { class: 'hint' });
-    mount(this.hud, this.el.hint, this.el.orders, this.el.top, this.el.rivals, this.el.cards, this.el.held, this.el.help, touchPad(this));
-  }
-
-  private renderHud(): void {
-    const s = this.state!;
-    const me = s.chefs[this.you];
-    const left = SHIFT_TICKS - s.tick;
-    // cheap change detection: only rebuild when something visible changed
-    const key = JSON.stringify([this.hintText, this.hints, Math.ceil(left / 20), me.score, me.streak, me.mischief, me.loadout, me.orders.map((o) => [o.id, Math.ceil((o.due - s.tick) / 20)]), s.chefs.map((c) => c.score), this.target, me.held, me.shield, s.tick < me.cdUntil, s.tick < me.slowUntil, s.tick < me.dullUntil]);
-    if (key === this.hudKey) return;
-    this.hudKey = key;
-
-    this.el.top.replaceChildren(...[
-      h('div', { class: `clock ${left < 20 * 20 ? 'hurry' : ''}` }, fmtTime(left)),
-      h('div', { class: 'score' }, h('b', {}, String(me.score)), h('span', {}, ' pts')),
-      me.streak >= 3 ? h('div', { class: 'streak' }, `streak ×${me.streak}`) : null,
-      me.shield ? h('div', { class: 'status good' }, '🛡 shield') : null,
-      s.tick < me.slowUntil ? h('div', { class: 'status bad' }, 'soy slick') : null,
-      s.tick < me.dullUntil ? h('div', { class: 'status bad' }, 'dull knife') : null,
-    ].filter((x): x is HTMLDivElement => !!x));
-
-    this.el.orders.replaceChildren(...me.orders.map((o) => {
-      const r = RECIPES[o.recipe];
-      const frac = Math.max(0, (o.due - s.tick) / (o.due - o.born));
-      return h('div', { class: `order ${frac < 0.25 ? 'late' : ''}` },
-        h('div', { class: 'oname' }, r.name),
-        h('div', { class: 'chips' }, ...r.ingredients.map((k) => h('span', { class: 'chip', style: `--c:${CHIP[k]}` }, CHIP_LABEL[k]))),
-        h('div', { class: 'patience' }, h('i', { style: `width:${(frac * 100).toFixed(0)}%` })));
-    }));
-
-    this.el.rivals.replaceChildren(...s.chefs.map((c, i) => h('div', { class: `rival ${i === this.you ? 'you' : ''} ${i === this.target ? 'target' : ''}`, style: `--c:${hex(CHEF_COLORS[i % 4])}`, onclick: () => { if (i !== this.you) { this.target = i; this.renderHud(); } } },
-      h('span', { class: 'dot' }), h('span', { class: 'rname' }, c.name), h('b', {}, String(c.score)), i === this.target ? h('em', {}, 'target') : null)));
-
-    const cooling = s.tick < me.cdUntil;
-    this.el.cards.replaceChildren(
-      h('div', { class: 'mischief' }, h('span', {}, 'Mischief'), ...Array.from({ length: MISCHIEF_MAX }, (_, k) => h('i', { class: k < me.mischief ? 'on' : '' }))),
-      ...CARDS.map((card, k) => {
-        const info = CARD_INFO[card];
-        const t = info.self ? this.you : this.target;
-        const ok = canCast(s, this.you, card, t);
-        const owned = me.loadout[card] ?? 0;
-        return h('button', { class: `card ${ok ? 'ok' : ''} ${cooling ? 'cool' : ''}`, title: info.blurb, onclick: () => this.playCard(card) },
-          h('kbd', {}, String(k + 1)), h('b', {}, info.name), h('small', {}, owned ? `${owned} owned` : `${info.cost} mischief`));
-      }),
-    );
-    this.el.hint.textContent = this.hints && this.hintText ? `Next: ${this.hintText}` : '';
-    this.el.held.textContent = me.held ? `Holding: ${me.held.k === 'plate' ? `plate${me.held.on?.length ? ` (${me.held.on.map((k) => CHIP_LABEL[k] ?? k).join(', ')})` : ''}` : ITEM_LABEL[me.held.k]}` : '';
+    this.ui = new Hud({
+      you: this.you, names: this.names, colors: this.names.map((_, i) => hex(CHEF_COLORS[i % 4])),
+      setTarget: (i) => this.setTarget(i), playCard: (c) => this.playCard(c), help: () => this.help(), toggleHints: () => this.toggleHints(),
+    }, touchPad(this));
+    mount(this.hud, this.ui.root);
   }
 }
 
@@ -228,7 +231,10 @@ function touchPad(g: Shift): HTMLElement {
   };
   stick.addEventListener('pointerdown', (e) => { id = e.pointerId; stick.setPointerCapture(e.pointerId); move(e); });
   stick.addEventListener('pointermove', (e) => { if (e.pointerId === id) move(e); });
-  stick.addEventListener('pointerup', () => { id = null; knob.style.transform = ''; g.touchMove(0, 0); });
+  const up = (): void => { id = null; knob.style.transform = ''; g.touchMove(0, 0); };
+  stick.addEventListener('pointerup', up);
+  stick.addEventListener('pointercancel', up);
+  document.body.classList.add('touch-ui');
   return h('div', { class: 'touch' }, stick, h('button', { class: 'tbtn act', onpointerdown: () => g.touchAct() }, 'E'), h('button', { class: 'tbtn chop', onpointerdown: () => g.touchChop() }, 'Chop'));
 }
 
@@ -255,6 +261,7 @@ export class SoloShift extends Shift {
   protected tickLocal(dt: number): void {
     const s = this.state!;
     if (s.over) return;
+    if (this.paused) return;
     this.acc += dt * DEBUG_SPEED;
     const step_ = 1 / TICK_HZ;
     while (this.acc >= step_ && !s.over) {
