@@ -83,6 +83,19 @@ export async function call(method: string, args: object): Promise<{ tx: string; 
   }
 }
 
+/**
+ * A payment in NEAR (energy packs, chef upgrades): an ordinary transaction signed and paid by the
+ * player's wallet, with `yocto` attached. It can't go through the gasless relayer, which never
+ * attaches deposits, so the wallet shows the amount and a small testnet gas fee.
+ */
+export async function pay(method: string, args: object, yocto: string): Promise<{ tx: string }> {
+  await ensureWallet();
+  const near = authClient().near;
+  const out = (await near.getNearClient().call(contract, method, args, { gas: '50 Tgas', attachedDeposit: BigInt(yocto) })) as { transaction?: { hash: string }; status?: { Failure?: unknown } };
+  if (out?.status && 'Failure' in out.status && out.status.Failure) throw new Error(failure(out) ?? 'the transaction failed');
+  return { tx: out?.transaction?.hash ?? '' };
+}
+
 function failure(outcome: unknown): string | undefined {
   const m = /panicked at[^"]*?: ?([^"\\]+)|Smart contract panicked: ([^"\\]+)/.exec(JSON.stringify(outcome ?? ''));
   return m?.[1] ?? m?.[2];
