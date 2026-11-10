@@ -8,6 +8,7 @@ import { COUNTERS, SPAWN, counterAt, isHeat, type CounterType } from './layout.t
 import { int, next, seedFrom, type Rng } from './rng.ts';
 import { canonical, sha256Hex } from './hash.ts';
 import { botInput, newBot, type BotSkill, type BotState } from './bot.ts';
+import { botInputV2, newBotV2, type BotV2 } from './bot2.ts';
 
 // Deterministic kitchen simulation. No Math.random, no Date, no DOM.
 // The same (setup, input log) always produces the same state and hash.
@@ -29,7 +30,7 @@ export interface Input {
 
 export interface Chef {
   name: string;
-  bot: BotState | null;
+  bot: BotState | BotV2 | null;
   x: number; z: number;
   fx: number; fz: number;
   mx: -1 | 0 | 1; mz: -1 | 0 | 1;
@@ -59,7 +60,8 @@ export interface Sabotage {
 }
 
 export interface State {
-  v: 1;
+  /** rules version: 1 = matches before AI chef difficulty (frozen), 2 = now */
+  v: RulesVersion;
   seed: string;
   tick: number;
   rng: Rng;
@@ -94,9 +96,41 @@ export interface ChefSetup {
   rival?: number;
 }
 
+export type RulesVersion = 1 | 2;
+export const RULES_VERSION: RulesVersion = 2;
+export const DIFFICULTIES: readonly BotSkill[] = ['easy', 'normal', 'hard'];
+
 export interface Setup {
   seed: string;
   chefs: ChefSetup[];
+  /** missing = 1: the rules every match before v2 was played under, kept exactly */
+  rulesVersion?: RulesVersion;
+  /** the AI chef difficulty the host picked (v2); every bot seat plays at it */
+  difficulty?: BotSkill;
+}
+
+/**
+ * The seed carries the rules version and difficulty, so they're committed with the seed hash at
+ * create_match: "v2.normal.<hex>" (rooms and solo) or "v2.<hex>" (league, bots at their own level).
+ * An untagged seed is rules v1.
+ */
+export const taggedSeed = (hex: string, difficulty?: BotSkill): string => `v${RULES_VERSION}.${difficulty ? `${difficulty}.` : ''}${hex}`;
+
+export function seedTag(seed: string): { rulesVersion: RulesVersion; difficulty?: BotSkill } {
+  const m = /^v(\d+)\.(?:(easy|normal|hard)\.)?/.exec(seed);
+  if (!m) return { rulesVersion: 1 };
+  if (m[1] !== '2') throw new Error(`unknown rules version v${m[1]}`);
+  return { rulesVersion: 2, difficulty: m[2] as BotSkill | undefined };
+}
+
+/** The setup's rules version, after checking it against what its seed committed to. */
+export function rulesOf(setup: Setup): RulesVersion {
+  const tag = seedTag(setup.seed);
+  const v = setup.rulesVersion ?? 1;
+  if (v !== tag.rulesVersion) throw new Error(`setup says rules v${v} but its seed commits to v${tag.rulesVersion}`);
+  if (setup.difficulty !== tag.difficulty) throw new Error(`setup difficulty ${setup.difficulty ?? 'none'} but its seed commits to ${tag.difficulty ?? 'none'}`);
+  if (setup.difficulty && setup.chefs.some((c) => c.bot && c.bot !== setup.difficulty)) throw new Error(`every AI chef plays at ${setup.difficulty} in this match`);
+  return v;
 }
 
 export const MAX_CHEFS = 4;
@@ -120,9 +154,11 @@ export function makeRail(seed: string): number[] {
 
 export function createState(setup: Setup): State {
   if (setup.chefs.length < 1 || setup.chefs.length > MAX_CHEFS) throw new Error(`1..${MAX_CHEFS} chefs`);
+  const v = rulesOf(setup);
+  const mk = v === 2 ? newBotV2 : newBot;
   const chefs: Chef[] = setup.chefs.map((c, i) => ({
     name: c.name,
-    bot: c.bot ? newBot(c.bot, `${setup.seed}:${i}`, c.rival) : null,
+    bot: c.bot ? mk(c.bot, `${setup.seed}:${i}`, c.rival) : null,
     x: SPAWN.x, z: SPAWN.z, fx: 0, fz: -1, mx: 0, mz: 0,
     held: null,
     st: COUNTERS.map(() => ({ item: null, p: 0 })),
@@ -134,7 +170,7 @@ export function createState(setup: Setup): State {
     score: 0, streak: 0, bestStreak: 0,
     delivered: 0, burns: 0, trashed: 0, expired: 0, wrong: 0, dishes: [], hits: 0,
   }));
-  return { v: 1, seed: setup.seed, tick: 0, rng: { s: seedFrom(`sim:${setup.seed}`) }, rail: makeRail(setup.seed), railIdx: 0, chefs, sab: [], over: false };
+  return { v, seed: setup.seed, tick: 0, rng: { s: seedFrom(`sim:${setup.seed}`) }, rail: makeRail(setup.seed), railIdx: 0, chefs, sab: [], over: false };
 }
 
 // ---------- helpers shared with the bot and renderer ----------
@@ -233,8 +269,8 @@ export function step(s: State, inputs: (Input | undefined)[] = []): SimEvent[] {
   for (let i = 0; i < s.chefs.length; i++) {
     const c = s.chefs[i];
     const own = inputs[i];
-    if (own?.takeover && !c.bot) c.bot = newBot(own.takeover, `${s.seed}:takeover:${i}`);
-    const inp = c.bot ? botInput(s, i) : own;
+    if (own?.takeover && !c.bot) c.bot = (s.v === 2 ? newBotV2 : newBot)(own.takeover, `${s.seed}:takeover:${i}`);
+    const inp = c.bot ? ((c.bot as BotV2).v === 2 ? botInputV2(s, i) : botInput(s, i)) : own;
     if (inp) applyInput(s, i, inp, ev);
     moveChef(c, s.tick);
     tickStations(s, i, ev);
