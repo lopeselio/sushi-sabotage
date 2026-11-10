@@ -21,28 +21,34 @@ pnpm start            # http://localhost:8787 (server + built web app)
 
 Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but nothing is written onchain.
 
-1. **Play a solo shift.** Open the page, type a chef name, pick how many rivals and an **AI chefs: Easy / Normal / Hard** level (default Normal; your browser remembers it), and press **Start shift**.
+1. **First visit.** Open the page. You see the title screen (logo, chef name, **Solo shift** and **Multiplayer**) and, on top of it, four welcome cards: what the game is, cook → plate → deliver, sabotage and Mischief, whodunit and the chain. **Next** / **Back** (or the arrow keys) move between them, **Skip** closes them. The last card's **Play my first shift** starts a solo shift against three Easy AI chefs. Your browser remembers that you've seen them (`sushi.onboarded`); **The intro again** under the play cards shows them again.
+2. **Play a solo shift.** Type a chef name, pick how many rivals and an **AI chefs: Easy / Normal / Hard** level, and press **Start shift** (it says **Start my first shift** until you've done the walkthrough).
+   - The level is remembered in your browser. Until you pick one, a first-timer gets Easy, otherwise Normal.
    - Easy chefs are slow, burn things and rarely sabotage; Normal ones are about as quick as an average player; Hard ones sabotage early and gang up on whoever leads. Against three of them an average player wins roughly 60 % / 40 % / 20 % of shifts (`pnpm balance`, below). The results screen says which level you played. A **ranked** shift (entry fee at stake) never runs on Easy: it plays at Normal, so nobody can farm the AI chefs' fees.
    - You see an AI chef's taunt. With a NEAR AI key set, it's "signed by a TEE model on NEAR AI".
    - Then a 3-second countdown, and your stall on a night-market street with three rival stalls.
-   - **WASD** to move, **E** to pick up or put down, **F** to chop. Orders appear top-left.
-   - On your first three shifts a yellow arrow and a **Next:** line show the next step for the most urgent order ("Grab a plate from the rack", "Put the raw rice in the rice cooker", …). **H** toggles them. The hints come from the AI chefs' own planner.
-2. **Cook a dish.** For *Azure Fin Maki*:
+   - **WASD** to move, **E** to pick up or put down, **F** to chop. Order tickets appear top-left; each has a patience bar that turns amber, then red. The clock, the scoreboard (click a rival to target them) and the **?** (How to play), 💡 (hints) and 🔊 buttons are top-right. Your Mischief pips, the target and the six cards are at the bottom; what you hold and any effects on you (soy slick, dull knife, shield, streak) are bottom-left.
+   - **Your first solo shift has a walkthrough.** A coach panel on the left waits for you to do each thing before it moves on: walk (it ticks off once you've moved), then **Cook your first dish**, which follows the yellow arrow and shows the skill the next step needs (grab a plate, grab an ingredient, cook it, chop on a board, build the dish, serve it) with a checklist that ticks off as you actually do each one. Then **Pick a target** (press **Tab**), **Play a card** (press **1–6**; the first dish gives you one pip), **Spy on the street** (**V**, then **V** again) and **Finish**. **Skip step** and **Skip tutorial** are always there. The walkthrough runs once (`sushi.tutorialDone`); **How to play → Replay tutorial** brings back the welcome cards and the walkthrough.
+   - On your first three shifts a yellow arrow and a **Next** box (left, under the tickets) show the next step for the most urgent order ("Grab a plate from the rack", "Put the raw rice in the rice cooker", …). **H** or 💡 toggles them. The hints come from the AI chefs' own planner.
+   - **?** (or the **?** button, or **How to play** in the top bar) opens the How to play sheet: controls, the cooking chains, all 20 recipes, the six cards, scoring, whodunit and the proof. In an unranked solo shift the kitchen pauses while it's open. **Esc** or **Got it** closes it.
+3. **Cook a dish.** For *Azure Fin Maki*:
    - **Rice:** raw rice → cooker (3 s) → board (3 chops) = sushi rice.
    - **Base:** nori sheet → board (3 chops) = nori roll.
    - **Fish:** fish → board (3 chops) → pan (3 s) = seared fish. Take it off within 5 s or it burns.
-   - **Plate it:** take a plate from the rack, put it on a counter, add the three, and carry it to the hatch at the front. You see "+points", and one Mischief pip lights up.
-3. **Sabotage.** With Mischief charged, press **Tab** to pick a target, then **1–6** for a card.
-   - The rival's stall flashes red. The AI chefs do the same to you, and you get "Someone hit you with …".
+   - **Plate it:** take a plate from the rack, put it on a counter, add the three, and carry it to the hatch at the front. A big "+points" floats up over your stall, your row on the scoreboard bumps, the ticket leaves the rail, and one Mischief pip lights up at the bottom.
+4. **Sabotage.** With Mischief charged, press **Tab** (or click a rival on the scoreboard) to pick a target, then **1–6** for a card. Cards you can afford light up; each shows its key and its cost in pips.
+   - A banner says "You played Dull Knife on Mei. They won't know it was you." The rival's stall flashes red.
+   - The AI chefs do the same to you: a red banner, "Someone hit you with Wasabi Bomb!", and the effect shows bottom-left (for example "Dull knife 9s"). A Bamboo Shield turns it into a green "Shield up!".
    - **V** shows all four kitchens at once.
-4. **Shift end.** If anyone hit you, you get **Whodunit?** first: name a suspect for each hit. Then the page says "The referee is re-running your shift to check it…". The server replays your input log through the same deterministic sim, then you see:
+5. **Shift end.** If anyone hit you, you get **Whodunit?** first: name a suspect for each hit. Then the page says "The referee is re-running your shift to check it…". The server replays your input log through the same deterministic sim, then you see:
+   - a podium with the top three chefs in their colours (you're outlined), and **Play again** to start the same shift setup;
    - "✓ The referee re-ran your shift from the input log and reached the same state";
    - the results table (in an unranked solo shift your accusations score; in a ranked one they don't, because your browser ran the sim and could know the culprits);
    - **the sealed sabotage log, opened**: who hit whom, with what, and when;
    - links to `create_match`, `seal xN` and `settle_match` on nearblocks.
 
    In `settle_match`, the contract checks every opening against its seal and pays out.
-5. **The proof.** **Proof bundle (JSON)** opens `/api/match/<id>`. It holds:
+6. **The proof.** **Proof bundle (JSON)** opens `/api/match/<id>`. It holds:
    - the seed, whose hash was committed at `create_match`;
    - the full input log;
    - every seal and its opening (salt included), and the accusations;
@@ -57,25 +63,25 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    ✓ replaying the input log reaches the recorded end state
    ✓ final scores from the replay match the contract  [700, 249, 190]
    ```
-6. **Multiplayer.**
+7. **Multiplayer.**
    - **Create room** gives you a 4-letter code. Open a second browser window, enter the code and press **Join**.
    - The host can **Add AI chef** and pick the **AI chefs** level (Easy / Normal / Hard); the other players see it. Everyone presses **Ready**. A player who leaves mid-shift is taken over by an AI chef at that level.
    - The server runs the shift at 20 Hz. Neither window ever receives the caster of a sabotage: check `/ws` frames in devtools, where the caster is `-1`.
    - After the shift comes **Whodunit?**: for each hit, pick a suspect. Right is +40 to you and −40 to them; wrong is −10.
    - The contract scores the accusations itself in `settle_match`.
-7. **Your Chef NFT** (needs a NEAR testnet wallet).
+8. **Your Chef NFT** (needs a NEAR testnet wallet).
    - Press **Sign in with NEAR** and pick a wallet (NEAR Connect: Meteor, Intear, HOT, MyNearWallet, …). The wallet signs one message, "Sign in to <this host>" (NEP-413), and Better Auth with the better-near-auth plugin starts a session cookie.
    - Go to **My Chef → Mint chef** and approve it in the wallet. You pay no gas: the wallet signs a NEP-366 meta-transaction and the game's relayer (`sushi-sabotage-relay.testnet`, limited to this contract, no deposits) submits it. Claiming the faucet, enabling ranked and buying cards work the same way. Gameplay itself never touches the wallet.
    - You see the NFT card. It shows level, title, purse (100 ryo), stats and cards, and updates after every shift.
    - **Claim daily 50 ryo** adds to the purse. **Enable ranked (10 ryo/match)** lets the referee charge an entry fee into the prize pot.
    - The same flow without a wallet app, against the live contract: `pnpm --filter @sushi/server e2e` creates a faucet test account and runs mint → sign-in → faucet → ranked approval → haggle → buy → ranked shift with the card → settlement → leaderboard → NEP-245 card transfer.
-8. **The Night Market.**
+9. **The Night Market.**
    - Pick a card and offer a price, optionally with a line of text. The Fixer answers in character.
    - The **price comes from `packages/rules/src/market.ts`**: demand raises it, it decays over an hour, and there's one counter-offer with an 80 % floor. The model only does the talking.
    - On accept, the Fixer agent posts an onchain offer, and your browser accepts it. The page shows the receipt, and the card lands in your chef NFT's inventory.
    - Cards are also **NEP-245 multi-tokens** (`mt_balance_of`, `mt_transfer`, `mt_batch_transfer`, `mt_transfer_call`, `mt_supply`): your balance is your chef's inventory, so players can trade cards. Buying mints one; bringing it into a match burns it.
-9. **The AI league.** Every 15 minutes three AI chefs play a full ranked shift against each other with nobody watching (on rules v1, each at its own persona level: Kenji hard, Mei and Hana normal, Tomo easy): entry fees into the pot, prizes and recipe-scroll royalties paid by the contract, the season leaderboard moving. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
-10. **The agents.** The **Agents** page lists each agent account and the receipts of what they did on their own (every 10 minutes):
+10. **The AI league.** Every 15 minutes three AI chefs play a full ranked shift against each other with nobody watching (on rules v1, each at its own persona level: Kenji hard, Mei and Hana normal, Tomo easy): entry fees into the pot, prizes and recipe-scroll royalties paid by the contract, the season leaderboard moving. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
+11. **The agents.** The **Agents** page lists each agent account and the receipts of what they did on their own (every 10 minutes):
    - claim the faucet;
    - buy their favourite card from the Fixer;
    - pay Scout Nori 5 ryo for a report on the current leader.
