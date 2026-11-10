@@ -3,7 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { CARDS, DIFFICULTIES, SHIFT_TICKS, replay, stateHash, validAccusations, type BotSkill, type Card, type LogEntry } from '@sushi/rules';
-import { ALL_AGENTS, CHEF_AGENTS, FIXER, accountOf, agentChef, agentEconomyTick, fixerOffer, haggleWithFixer, prices, recentActs, taunt } from './agents.ts';
+import { ALL_AGENTS, CHEF_AGENTS, DAY_CAP, MATCH_CAP, agentBudgets, FIXER, accountOf, agentChef, agentEconomyTick, fixerOffer, haggleWithFixer, prices, recentActs, taunt } from './agents.ts';
+import { PLAYER_RESERVE, affordableRounds } from './budget.ts';
 import { BA_PATH, accountFromHeaders, authHandler } from './ba.ts';
 import { view } from './chain.ts';
 import { config, explorerTx } from './config.ts';
@@ -152,7 +153,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return json(res, 200, { outcome: reply.outcome, list: reply.list, line: { who: reply.line.who, text: reply.line.text, signed: !!reply.line.signature }, offer: offer && { ...offer, url: explorerTx(offer.tx) } });
     }
     if (p === '/api/leaderboard') return json(res, 200, config.chainEnabled ? await view('leaderboard', { limit: 20 }).catch(() => []) : []);
-    if (p === '/api/agents') return json(res, 200, { acts: recentActs().map((a) => ({ ...a, url: a.tx ? explorerTx(a.tx) : undefined })), chefs: CHEF_AGENTS.map((a) => ({ name: a.name, account: accountOf(a), skill: a.skill })) });
+    if (p === '/api/agents') {
+      const budgets = await agentBudgets();
+      return json(res, 200, {
+        acts: recentActs().map((a) => ({ ...a, url: a.tx ? explorerTx(a.tx) : undefined })),
+        chefs: CHEF_AGENTS.map((a, i) => ({ name: a.name, account: accountOf(a), skill: a.skill, budget: budgets[i] })),
+        league: { rankedRoundsLeft: affordableRounds(budgets), playerReserve: PLAYER_RESERVE, dayCap: DAY_CAP, matchCap: MATCH_CAP },
+      });
+    }
     if (p === '/api/matches') return json(res, 200, recentMatches(20).map((m) => ({ id: m.id, mode: m.mode, createdAt: m.createdAt, names: m.seats.map((s) => s.name), results: m.results, settled: m.settled, ranked: m.ranked })));
     if (p.startsWith('/api/match/')) {
       const m = loadMatch(p.slice('/api/match/'.length));
