@@ -11,7 +11,7 @@ Built for NEAR HACKATHON (Nov 2026). Tracks: **Games With Real Economies**, **Pr
 
 ## Try it (do X, see Y)
 
-Hosted demo: https://sushi-sabotage.happyflower-1d86c59e.northeurope.azurecontainerapps.io/ (Azure Container Apps), also inside the NEAR Arcade at https://near-arcade.vercel.app/ next to our other NEAR games. Locally:
+Hosted demo: https://sushi.lopeselio.online/ (Azure Container Apps; also at https://sushi-sabotage.happyflower-1d86c59e.northeurope.azurecontainerapps.io/), also inside the NEAR Arcade at https://near-arcade.vercel.app/ next to our other NEAR games. Locally:
 
 ```bash
 pnpm install
@@ -69,12 +69,15 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - The server runs the shift at 20 Hz. Neither window ever receives the caster of a sabotage: check `/ws` frames in devtools, where the caster is `-1`.
    - After the shift comes **Whodunit?**: for each hit, pick a suspect. Right is +40 to you and −40 to them; wrong is −10.
    - The contract scores the accusations itself in `settle_match`.
-8. **Your Chef NFT** (needs a NEAR testnet wallet).
-   - Press **Sign in with NEAR** and pick a wallet (NEAR Connect: Meteor, Intear, HOT, MyNearWallet, …). The wallet signs one message, "Sign in to <this host>" (NEP-413), and Better Auth with the better-near-auth plugin starts a session cookie.
-   - Go to **My Chef → Mint chef** and approve it in the wallet. You pay no gas: the wallet signs a NEP-366 meta-transaction and the game's relayer (`sushi-sabotage-relay.testnet`, limited to this contract, no deposits) submits it. Claiming the faucet, enabling ranked and buying cards work the same way. Gameplay itself never touches the wallet.
-   - You see the NFT card. It shows level, title, purse (100 ryo), stats and cards, and updates after every shift.
+8. **Your Chef NFT** (needs a NEAR testnet wallet; free).
+   - After a guest shift the results screen invites you to **Sign in with NEAR**. Pick a wallet (NEAR Connect: Meteor, Intear, HOT, MyNearWallet, …). The wallet signs one message, "Sign in to <this host>" (NEP-413), and Better Auth with the better-near-auth plugin starts a session cookie.
+   - Press **Mint your chef — free** (on the title screen, the results screen or **My Chef**) and approve it in the wallet. No deposit and no gas: the wallet signs a NEP-366 meta-transaction, the game's relayer (`sushi-sabotage-relay.testnet`, limited to this contract, no deposits) submits it, and the contract pays the storage. Claiming the faucet, enabling ranked and buying cards work the same way. Gameplay itself never touches the wallet.
+   - You see the chef card: the contract-drawn NFT image, level and XP bar, stats, purse (100 ryo), cards, **energy 1000/1000** and four **upgrades**. It updates after every shift.
+   - **Energy:** each recorded shift costs 100 and it refills by itself at 100 an hour. With less than 100 your shift still plays, as an unrecorded guest shift. **+300 energy · 0.1 NEAR** buys a pack.
+   - **Upgrades:** Knife (some chops cut twice), Pan (food burns later), Sandals (walk faster), Apron (sabotage wears off sooner), levels 1–5 for 0.05 / 0.1 / 0.2 / 0.3 / 0.5 NEAR, higher levels needing a higher chef level. Ranked shifts count at most level 3. Your next shift's setup carries them (`gear` in the proof bundle), and `pnpm verify` checks them against what the contract recorded.
+   - Purchases attach NEAR, so they are ordinary wallet transactions (the gasless relayer never carries payments); the page says so before your wallet opens. The NEAR goes to the contract's treasury (`get_economy`). Numbers and fairness: [DESIGN.md, "Energy and upgrades"](DESIGN.md#energy-and-upgrades-paid-in-testnet-near).
    - **Claim daily 50 ryo** adds to the purse. **Enable ranked (10 ryo/match)** lets the referee charge an entry fee into the prize pot.
-   - The same flow without a wallet app, against the live contract: `pnpm --filter @sushi/server e2e` creates a faucet test account and runs mint → sign-in → faucet → ranked approval → haggle → buy → ranked shift with the card → settlement → leaderboard → NEP-245 card transfer.
+   - The same flow without a wallet app, against the live contract: `pnpm --filter @sushi/server e2e` creates a test account (from the faucet, or set `E2E_FUNDER=<account>` when the faucet is rate-limited) and runs sign-in → mint → **buy a knife upgrade with 0.05 NEAR** → faucet → ranked approval → haggle → buy a card → a shift with the card and the upgrade (checked in the setup and onchain) → settlement → NEP-245 card transfer → **buy an energy pack with 0.1 NEAR**. A run on 2026-11-10: [buy_upgrade](https://testnet.nearblocks.io/txns/CpG5gu5YDJw9LBG7Lk84gpmJ9nQ6CvhgnddeWkDUh8qz), [buy_energy](https://testnet.nearblocks.io/txns/D3C2ZruhMjZHRPB2euMVZMHE5ddii1jPx92Pf4REfxDd), [mint (gasless)](https://testnet.nearblocks.io/txns/RiPiBZRnmXMmxo6jdZKxjqEF5LLAh1gCdqdeZtC9cg4).
 9. **The Night Market.**
    - Pick a card and offer a price, optionally with a line of text. The Fixer answers in character.
    - The **price comes from `packages/rules/src/market.ts`**: demand raises it, it decays over an hour, and there's one counter-offer with an 80 % floor. The model only does the talking.
@@ -139,11 +142,11 @@ tools/blender     bpy scripts that build every 3D model (.glb) and its preview: 
 ## Tests
 
 ```bash
-pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market, hints, difficulty, frozen v1 replays
-pnpm contract:test                   # 20 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties, NEP-245
+pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market, hints, difficulty, frozen v1 and v2 replays, chef upgrades
+pnpm contract:test                   # 34 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties, NEP-245, energy, upgrades, treasury, migration
 pnpm sim 10                          # headless AI-only shifts: balance check
 pnpm balance 400                     # a reference human vs 3 AI chefs at v1 / easy / normal / hard: win rate, dishes, sabotages
-pnpm verify <matchId>                # re-run a finished match and check it against the contract
+pnpm verify <matchId>                # re-run a finished match and check it against the contract (and its chef upgrades, rules v3)
 pnpm --filter @sushi/server e2e      # the whole signed-in player flow on testnet with a fresh faucet account
 ```
 
@@ -152,7 +155,7 @@ pnpm --filter @sushi/server e2e      # the whole signed-in player flow on testne
 - **Contract:** `pnpm contract:build`, then `near contract deploy sushi-sabotage.testnet use-file contracts/kitchen/target/near/sushi_sabotage_kitchen.wasm with-init-call new json-args '{"owner":"sushi-sabotage.testnet","referee":"sushi-sabotage-ref.testnet"}' …`.
 - **Agents:** `pnpm --filter @sushi/server setup:agents`. It creates the six agent accounts with function-call keys, registers them, approves fees and mints the 20 scrolls. It is idempotent.
 - **Hosting:** `scripts/deploy-azure.sh`. One Docker image runs on Azure Container Apps (one replica: rooms live in memory); the server serves the web app. `scripts/azure-storage.sh` mounts an Azure Files share at `/data`, so proof bundles survive restarts and redeploys.
-- **Upgrading the contract:** `near contract deploy sushi-sabotage.testnet use-file … without-init-call …` (state layout is unchanged), then `mt_reindex_supply` once if card supply needs recounting.
+- **Upgrading the contract:** `near contract deploy sushi-sabotage.testnet use-file … without-init-call …` when the state layout is unchanged, then `mt_reindex_supply` once if card supply needs recounting. The energy/upgrades release changed the root layout and was deployed with `… with-init-call migrate json-args '{}' …` ([tx](https://testnet.nearblocks.io/txns/E9LsipP6meKdsNRBUjhMarDZ7weQK8XAvzkUPqeHZn7U)); `migrate` is tested against the live testnet state bytes and refuses to run twice.
 
 ## Lineage, reuse and disclosures
 
