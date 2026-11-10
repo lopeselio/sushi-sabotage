@@ -22,7 +22,7 @@ pnpm start            # http://localhost:8787 (server + built web app)
 Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but nothing is written onchain.
 
 1. **Play a solo shift.** Open the page, type a chef name, pick how many rivals and an **AI chefs: Easy / Normal / Hard** level (default Normal; your browser remembers it), and press **Start shift**.
-   - Easy chefs are slow, burn things and rarely sabotage; Normal ones are about as quick as an average player; Hard ones sabotage early and gang up on whoever leads. Against three of them an average player wins roughly 60 % / 40 % / 20 % of shifts (`pnpm balance`, below). The results screen says which level you played.
+   - Easy chefs are slow, burn things and rarely sabotage; Normal ones are about as quick as an average player; Hard ones sabotage early and gang up on whoever leads. Against three of them an average player wins roughly 60 % / 40 % / 20 % of shifts (`pnpm balance`, below). The results screen says which level you played. A **ranked** shift (entry fee at stake) never runs on Easy: it plays at Normal, so nobody can farm the AI chefs' fees.
    - You see an AI chef's taunt. With a NEAR AI key set, it's "signed by a TEE model on NEAR AI".
    - Then a 3-second countdown, and your stall on a night-market street with three rival stalls.
    - **WASD** to move, **E** to pick up or put down, **F** to chop. Orders appear top-left.
