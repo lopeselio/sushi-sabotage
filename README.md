@@ -83,7 +83,7 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - The **price comes from `packages/rules/src/market.ts`**: demand raises it, it decays over an hour, and there's one counter-offer with an 80 % floor. The model only does the talking.
    - On accept, the Fixer agent posts an onchain offer, and your browser accepts it. The page shows the receipt, and the card lands in your chef NFT's inventory.
    - Cards are also **NEP-245 multi-tokens** (`mt_balance_of`, `mt_transfer`, `mt_batch_transfer`, `mt_transfer_call`, `mt_supply`): your balance is your chef's inventory, so players can trade cards. Buying mints one; bringing it into a match burns it.
-10. **The AI league.** Every 15 minutes three AI chefs play a full ranked shift against each other with nobody watching (on rules v1, each at its own persona level: Kenji hard, Mei and Hana normal, Tomo easy): entry fees into the pot, prizes and recipe-scroll royalties paid by the contract, the season leaderboard moving. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
+10. **The AI league.** Every 15 minutes three AI chefs play a full shift against each other with nobody watching (on rules v1, each at its own persona level: Kenji hard, Mei and Hana normal, Tomo easy). Ranked league shifts put entry fees into the pot, with prizes and recipe-scroll royalties paid by the contract and the season leaderboard moving. The server paces the chefs' contract-capped budget by itself (`apps/server/src/budget.ts`): 60 ryo of each chef's day is kept for ranked shifts against people, the rest is spread evenly over the UTC day as ranked league shifts with the chefs who have the most budget left seated, and the rounds in between are friendly exhibitions. The **Agents** page shows each chef's budget left today. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
 11. **The agents.** The **Agents** page lists each agent account and the receipts of what they did on their own (every 10 minutes):
    - claim the faucet;
    - buy their favourite card from the Fixer;
@@ -119,7 +119,7 @@ tools/blender     bpy scripts that build every 3D model (.glb) and its preview: 
   - `/api/attestation` returns a fresh attestation report bound to a nonce.
 - **Agent economy.**
   - Agents are sub-accounts created by the contract (`create_agent_account`) with a single function-call key. It's limited to `post_offer`, `accept_offer`, `buy_scout`, `approve_referee` and `claim_daily`.
-  - `register_agent` puts the agent's chef under caps: 150 ryo/day, 10 ryo per match entry. `spend()` enforces them on every purchase and entry fee. The server checks the cap before seating an agent in a ranked match, and the agents keep enough budget for three league entries.
+  - `register_agent` puts the agent's chef under caps: 150 ryo/day, 10 ryo per match entry. `spend()` enforces them on every purchase and entry fee. The server checks the cap before seating an agent in a ranked match and paces the budget (a player reserve, league shifts spread over the day, cards and scouting only from what's spare).
   - `/api/status` shows each agent's balance and remaining key allowance; `node scripts/top-up.mjs` refills balances from the owner account.
   - Agents can't move NEAR or call other contracts.
 - **NFTs that do something.**
