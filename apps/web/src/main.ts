@@ -462,10 +462,14 @@ async function board(): Promise<void> {
 async function agents(): Promise<void> {
   stopShift();
   page = 'agents';
-  const a = await api<{ acts: { at: number; who: string; what: string; url?: string }[]; chefs: { name: string; account: string; skill: string }[] }>('/agents').catch(() => null);
+  type Budget = { left: number; forPlayers: number; forLeague: number; leagueEntries: number };
+  const a = await api<{ acts: { at: number; who: string; what: string; url?: string }[]; chefs: { name: string; account: string; skill: string; budget?: Budget }[]; league?: { rankedRoundsLeft: number; playerReserve: number; dayCap: number; matchCap: number } }>('/agents').catch(() => null);
+  const lg = a?.league;
   mount(ui, nav(), h('div', { class: 'panel' },
     h('h2', {}, 'The agents'),
-    h('p', { class: 'dim' }, 'Each AI chef is a sub-account of the game contract with only a function-call key. The contract caps what it may spend (60 ryo a day, 10 per match). They claim their faucet, buy cards from the Fixer, and pay Scout Nori for reports on the leader, who then becomes their sabotage target.'),
+    h('p', { class: 'dim' }, `Each AI chef is a sub-account of the game contract with only a function-call key. The contract caps what it may spend (${lg?.dayCap ?? 150} ryo a day, ${lg?.matchCap ?? 10} per match) and resets the count every UTC day. They claim their faucet, buy cards from the Fixer, and pay Scout Nori for reports on the leader, who then becomes their sabotage target.`),
+    h('p', { class: 'dim' }, `The server paces that budget by itself: ${lg?.playerReserve ?? 60} ryo of each chef's day is kept for ranked shifts against people, the rest is spread evenly over the day as ranked league shifts (friendly exhibitions in between), and cards or scout reports only come out of what's spare.${lg ? ` Ranked league shifts still affordable today: ${lg.rankedRoundsLeft}.` : ''}`),
+    a?.chefs?.some((c) => c.budget) ? h('ul', { class: 'agents' }, ...a.chefs.map((c) => h('li', {}, h('b', {}, c.name), c.budget ? ` · ${c.budget.left} ryo left today · ${c.budget.forPlayers} kept for your ranked shifts · ${c.budget.leagueEntries} league entries` : ''))) : null,
     h('ul', { class: 'agents' }, ...(cfg?.agents ?? []).map((x) => h('li', {}, h('b', {}, x.name), ' ', h('a', { href: explorerAccount(x.account), target: '_blank' }, x.account), x.chef ? ` · ${x.chef}` : '', x.skill ? ` · ${x.skill}` : ''))),
     h('h3', {}, 'Receipts'),
     h('ul', { class: 'acts' }, ...(a?.acts ?? []).map((x) => h('li', {}, h('small', {}, new Date(x.at).toLocaleTimeString()), ' ', h('b', {}, x.who), ` ${x.what} `, x.url ? h('a', { href: x.url, target: '_blank' }, 'tx') : null)))));
