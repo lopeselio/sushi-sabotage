@@ -17,7 +17,7 @@ import bpy
 from mathutils import Vector, noise
 
 sys.path.insert(0, os.path.dirname(__file__))
-from build_assets import OUT, PREV, reset  # noqa: E402
+from build_assets import OUT, PREV, join, reset  # noqa: E402
 
 random.seed(7)
 SPACING = 0.7
@@ -101,17 +101,21 @@ def add(prim, name, mat, **kw):
 
 
 def group(name, parts, at):
-    """Parent parts under an empty called `name` placed at `at` (the item's origin is its base)."""
+    """Join an item's parts into one mesh under an empty called `name` placed at `at` (origin at its base)."""
+    mesh = join(parts, f"{name}_mesh", origin=(0, 0, 0))
+    k = SCALE.get(name, 1)
+    if k != 1:
+        mesh.scale = (k, k, k)
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0, 0))
     e = bpy.context.active_object
     e.name = name
-    for p in parts:
-        apply_all(p)
-        p.parent = e
+    mesh.parent = e
     e.location = at
     return e
 
 
+SCALE = {"lobster": 0.8}
 _slot = [0]
 
 
@@ -168,7 +172,7 @@ def seared(base, crust, stripes=True, char=0.0):
 # ---------- items ----------
 
 def rice_raw():
-    sack = add("primitive_uv_sphere_add", "sack", MATTE, radius=0.15, location=(0, 0, 0.15), segments=20, ring_count=12)
+    sack = add("primitive_uv_sphere_add", "sack", MATTE, radius=0.15, location=(0, 0, 0.15), segments=14, ring_count=8)
     sack.scale = (1, 0.85, 1.15)
     bpy.ops.object.transform_apply(scale=True)
     smooth(sack)
@@ -185,7 +189,7 @@ def rice_raw():
 
 
 def bowl(fill_fn, heap=1.0, burnt=False):
-    b = add("primitive_uv_sphere_add", "bowl", CERAMIC, radius=0.17, location=(0, 0, 0.17), segments=28, ring_count=14)
+    b = add("primitive_uv_sphere_add", "bowl", CERAMIC, radius=0.17, location=(0, 0, 0.17), segments=24, ring_count=12)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="DESELECT")
     bpy.ops.object.mode_set(mode="OBJECT")
@@ -195,9 +199,9 @@ def bowl(fill_fn, heap=1.0, burnt=False):
     bpy.ops.mesh.delete(type="VERT")
     bpy.ops.object.mode_set(mode="OBJECT")
     b.modifiers.new("solid", "SOLIDIFY").thickness = 0.015
-    smooth(b, 1)
+    smooth(b, 0)
     paint(b, lambda co, n: (0.12, 0.16, 0.32) if co.z > -0.03 else (0.9, 0.88, 0.82))
-    rice = add("primitive_uv_sphere_add", "rice", MATTE, radius=0.15, location=(0, 0, 0.16), segments=24, ring_count=12)
+    rice = add("primitive_uv_sphere_add", "rice", MATTE, radius=0.15, location=(0, 0, 0.16), segments=16, ring_count=8)
     rice.scale = (1, 1, 0.45 * heap)
     bpy.ops.object.transform_apply(scale=True)
     smooth(rice, 1)
@@ -206,7 +210,7 @@ def bowl(fill_fn, heap=1.0, burnt=False):
     parts = [b, rice]
     if burnt:
         for k in range(5):
-            s = add("primitive_uv_sphere_add", f"smoke{k}", MATTE, radius=0.025, location=(random.uniform(-.06, .06), random.uniform(-.06, .06), 0.24))
+            s = add("primitive_uv_sphere_add", f"smoke{k}", MATTE, radius=0.03, location=(random.uniform(-.06, .06), random.uniform(-.06, .06), 0.235), segments=8, ring_count=5)
             paint(s, solid((0.05, 0.04, 0.04)))
             parts.append(s)
     return parts
@@ -242,10 +246,10 @@ def nori_sheet():
 
 
 def roll_parts(fill_colors, length=0.3, r=0.09):
-    outer = add("primitive_cylinder_add", "nori", FOOD, radius=r, depth=length, location=(0, 0, r), rotation=(0, math.pi / 2, 0), vertices=24)
+    outer = add("primitive_cylinder_add", "nori", FOOD, radius=r, depth=length, location=(0, 0, r), rotation=(0, math.pi / 2, 0), vertices=18)
     smooth(outer, 0)
     paint(outer, lambda co, n: (0.06, 0.17, 0.09))
-    inner = add("primitive_cylinder_add", "rice", MATTE, radius=r * 0.86, depth=length + 0.004, location=(0, 0, r), rotation=(0, math.pi / 2, 0), vertices=24)
+    inner = add("primitive_cylinder_add", "rice", MATTE, radius=r * 0.86, depth=length + 0.004, location=(0, 0, r), rotation=(0, math.pi / 2, 0), vertices=18)
     bumpy(inner, 0.004, 0.01)
     paint(inner, lambda co, n: (0.97, 0.96, 0.92))
     parts = [outer, inner]
@@ -261,22 +265,27 @@ def nori_roll():
     return roll_parts([])
 
 
-def nori_cone(fills=()):
+def nori_cone(fills=(), rice=False):
     c = add("primitive_cone_add", "cone", FOOD, radius1=0.11, radius2=0.0, depth=0.32, location=(0, 0, 0.16), rotation=(math.pi, 0, 0), vertices=24)
     c.modifiers.new("solid", "SOLIDIFY").thickness = 0.01
     smooth(c, 0)
     paint(c, lambda co, n: mix((0.06, 0.17, 0.09), (0.12, 0.28, 0.14), noise.noise(co * 40) * 0.5 + 0.5))
     parts = [c]
+    if rice:
+        r = add("primitive_uv_sphere_add", "rice", MATTE, radius=0.1, location=(0, 0, 0.31), segments=14, ring_count=7)
+        r.scale = (1, 1, 0.4)
+        bumpy(r, 0.006, 0.012)
+        paint(r, solid((0.97, 0.96, 0.92)))
+        parts.append(r)
     for k, col in enumerate(fills):
-        s = add("primitive_uv_sphere_add", f"fill{k}", FOOD, radius=0.045, location=((k - (len(fills) - 1) / 2) * 0.05, 0, 0.31 + (k % 2) * 0.02))
+        s = add("primitive_uv_sphere_add", f"fill{k}", FOOD, radius=0.045, location=((k - (len(fills) - 1) / 2) * 0.05, 0, 0.34 + (k % 2) * 0.02), segments=10, ring_count=6)
         smooth(s, 0)
         paint(s, solid(col))
         parts.append(s)
     return parts
 
-
 def fish_whole(skin=(0.32, 0.45, 0.62), belly=(0.86, 0.88, 0.9)):
-    body = add("primitive_uv_sphere_add", "body", GLAZE, radius=0.1, location=(0, 0, 0.08), segments=24, ring_count=12)
+    body = add("primitive_uv_sphere_add", "body", GLAZE, radius=0.1, location=(0, 0, 0.08), segments=18, ring_count=10)
     body.scale = (2.1, 0.85, 0.8)
     bpy.ops.object.transform_apply(scale=True)
     smooth(body, 1)
@@ -284,7 +293,7 @@ def fish_whole(skin=(0.32, 0.45, 0.62), belly=(0.86, 0.88, 0.9)):
     tail = add("primitive_cone_add", "tail", GLAZE, radius1=0.08, depth=0.1, location=(-0.24, 0, 0.08), rotation=(0, math.pi / 2, 0), vertices=4)
     tail.scale = (1, 0.25, 1)
     paint(tail, solid(skin))
-    eye = add("primitive_uv_sphere_add", "eye", GLAZE, radius=0.018, location=(0.16, -0.06, 0.1))
+    eye = add("primitive_uv_sphere_add", "eye", GLAZE, radius=0.022, location=(0.165, -0.055, 0.1), segments=8, ring_count=5)
     paint(eye, solid((0.03, 0.03, 0.03)))
     return [body, tail, eye]
 
@@ -296,8 +305,8 @@ def slab_parts(fn, n=3, w=0.17, h=0.045, d=0.1, mat=None):
         s.scale = (w, d, h)
         s.rotation_euler = (0, 0.12, 0.25 * (k - 1))
         bpy.ops.object.transform_apply(scale=True)
-        dense(s, 8)
-        s.modifiers.new("bev", "BEVEL").width = 0.012
+        dense(s, 4)
+        s.modifiers.new("bev", "BEVEL").width = 0.01
         smooth(s, 0)
         paint(s, fn)
         parts.append(s)
@@ -314,29 +323,51 @@ def lobster_meat(co, n):
 
 
 def lobster_whole():
-    shell = (0.82, 0.15, 0.1)
+    """A curled red lobster: carapace, a segmented tail ending in a fan, two big claws and long feelers."""
+    shell, dark = (0.86, 0.16, 0.1), (0.45, 0.05, 0.04)
+    sh = lambda co, n: mix(shell, dark, 0.15 + 0.5 * max(0, n.z) * (0.5 + 0.5 * noise.noise(co * 30)))
     parts = []
+    head = add("primitive_uv_sphere_add", "head", GLAZE, radius=0.08, location=(0.04, 0, 0.07), segments=14, ring_count=8)
+    head.scale = (1.4, 0.9, 0.8)
+    bpy.ops.object.transform_apply(scale=True)
+    smooth(head, 0)
+    paint(head, sh)
+    parts.append(head)
     for k in range(5):
-        seg = add("primitive_uv_sphere_add", f"seg{k}", GLAZE, radius=0.07 - k * 0.007, location=(-k * 0.06, 0, 0.06), segments=16, ring_count=10)
-        seg.scale = (0.8, 1, 0.75)
+        t = k / 4
+        seg = add("primitive_uv_sphere_add", f"seg{k}", GLAZE, radius=0.062 - k * 0.007, location=(-0.08 - k * 0.055, 0, 0.06 - t * t * 0.03), segments=12, ring_count=7)
+        seg.scale = (0.75, 1, 0.7)
         bpy.ops.object.transform_apply(scale=True)
-        paint(seg, lambda co, n: mix(shell, (0.5, 0.06, 0.05), max(0, -n.z)))
+        smooth(seg, 0)
+        paint(seg, sh)
         parts.append(seg)
-    for y in (-0.08, 0.08):
-        claw = add("primitive_uv_sphere_add", f"claw{y}", GLAZE, radius=0.05, location=(0.12, y, 0.06), segments=16, ring_count=10)
-        claw.scale = (1.4, 0.8, 0.7)
-        bpy.ops.object.transform_apply(scale=True)
-        paint(claw, solid(shell))
-        parts.append(claw)
-    for y in (-0.025, 0.025):
-        ant = add("primitive_cylinder_add", f"ant{y}", FOOD, radius=0.005, depth=0.16, location=(0.12, y, 0.11), rotation=(0, math.radians(60), 0), vertices=6)
+    fan = add("primitive_uv_sphere_add", "fan", GLAZE, radius=0.06, location=(-0.36, 0, 0.03), segments=10, ring_count=6)
+    fan.scale = (0.8, 1.3, 0.2)
+    paint(fan, solid(shell))
+    parts.append(fan)
+    for s in (-1, 1):
+        arm = add("primitive_cylinder_add", f"arm{s}", GLAZE, radius=0.016, depth=0.12, location=(0.15, s * 0.07, 0.06), rotation=(0, math.pi / 2, s * 0.6), vertices=8)
+        paint(arm, solid(shell))
+        claw = add("primitive_uv_sphere_add", f"claw{s}", GLAZE, radius=0.05, location=(0.24, s * 0.11, 0.065), segments=12, ring_count=7)
+        claw.scale = (1.5, 0.85, 0.6)
+        claw.rotation_euler = (0, 0, s * 0.3)
+        smooth(claw, 0)
+        paint(claw, sh)
+        pin = add("primitive_cone_add", f"pin{s}", GLAZE, radius1=0.022, depth=0.08, location=(0.33, s * 0.14, 0.07), rotation=(0, math.pi / 2, s * 0.3), vertices=8)
+        paint(pin, solid(shell))
+        ant = add("primitive_cylinder_add", f"ant{s}", FOOD, radius=0.005, depth=0.3, location=(0.2, s * 0.04, 0.14), rotation=(0, math.radians(65), s * 0.35), vertices=5)
         paint(ant, solid(shell))
-        parts.append(ant)
+        eye = add("primitive_uv_sphere_add", f"eye{s}", GLAZE, radius=0.014, location=(0.13, s * 0.035, 0.12), segments=6, ring_count=4)
+        paint(eye, solid((0.02, 0.02, 0.02)))
+        for j in range(3):
+            leg = add("primitive_cylinder_add", f"leg{s}{j}", FOOD, radius=0.007, depth=0.09, location=(0.02 - j * 0.04, s * 0.08, 0.03), rotation=(s * 1.0, 0, 0), vertices=5)
+            paint(leg, solid(dark))
+            parts.append(leg)
+        parts += [arm, claw, pin, ant, eye]
     return parts
 
-
 def tomato_whole():
-    t = add("primitive_uv_sphere_add", "tomato", GLAZE, radius=0.12, location=(0, 0, 0.11), segments=24, ring_count=14)
+    t = add("primitive_uv_sphere_add", "tomato", GLAZE, radius=0.12, location=(0, 0, 0.11), segments=16, ring_count=10)
     t.scale = (1, 1, 0.85)
     bpy.ops.object.transform_apply(scale=True)
     smooth(t, 1)
@@ -349,39 +380,52 @@ def tomato_whole():
 
 
 def tomato_rounds(blister=False):
+    """Three rounds: a red skin ring, a juicier flesh disc and seed pockets; blistered ones are charred."""
+    skin = (0.9, 0.12, 0.08)
+    flesh = (1.0, 0.36, 0.24)
+    seed = (1.0, 0.78, 0.45)
+    char = (0.3, 0.05, 0.03)
     parts = []
     for k in range(3):
-        r = add("primitive_cylinder_add", f"round{k}", GLAZE, radius=0.09, depth=0.025, location=((k - 1) * 0.11, 0, 0.0125 + k * 0.008), vertices=32, end_fill_type="TRIFAN")
-        dense(r, 3)
-        r.rotation_euler = (0.15 * (k - 1), 0.1, 0)
-        r.modifiers.new("bev", "BEVEL").width = 0.006
-        smooth(r, 0)
+        x, z, tilt = (k - 1) * 0.12, 0.014 + (k == 1) * 0.01, 0.12 * (k - 1)
+        ring = add("primitive_cylinder_add", f"ring{k}", GLAZE, radius=0.09, depth=0.026, location=(x, 0, z), vertices=20, rotation=(tilt, 0, 0))
+        ring.modifiers.new("bev", "BEVEL").width = 0.006
+        smooth(ring, 0)
+        paint(ring, (lambda co, n: mix(skin, char, 0.35 + 0.4 * max(0, noise.noise(co * 40)))) if blister else solid(skin))
+        disc = add("primitive_cylinder_add", f"flesh{k}", GLAZE, radius=0.074, depth=0.03, location=(x, 0, z), vertices=20, rotation=(tilt, 0, 0))
+        paint(disc, (lambda co, n: mix(flesh, char, 0.3 + 0.35 * max(0, noise.noise(co * 35)))) if blister else solid(flesh))
+        parts += [ring, disc]
+        for j in range(5):
+            a = j / 5 * math.tau + k
+            sd = add("primitive_uv_sphere_add", f"seed{k}{j}", GLAZE, radius=0.022, location=(x + math.cos(a) * 0.042, math.sin(a) * 0.042 * math.cos(tilt), z + 0.015 + math.sin(a) * 0.042 * math.sin(tilt)), segments=6, ring_count=4)
+            sd.scale = (1, 1, 0.35)
+            paint(sd, solid(mix(seed, char, 0.4) if blister else seed))
+            parts.append(sd)
         if blister:
-            bumpy(r, 0.008, 0.02)
-
-        def f(co, n, blister=blister):
-            rad = math.hypot(co.x, co.y)
-            c = (0.9, 0.12, 0.08) if rad > 0.075 else ((1.0, 0.5, 0.35) if rad > 0.03 and math.sin(math.atan2(co.y, co.x) * 6) > 0.4 else (0.98, 0.3, 0.2))
-            if blister:
-                c = mix(c, (0.35, 0.05, 0.03), 0.45 + 0.3 * max(0, noise.noise(co * 40)))
-            return c
-        paint(r, f)
-        parts.append(r)
+            for j in range(3):
+                b = add("primitive_uv_sphere_add", f"blister{k}{j}", MATTE, radius=0.016, location=(x + random.uniform(-0.05, 0.05), random.uniform(-0.05, 0.05), z + 0.018), segments=6, ring_count=4)
+                b.scale = (1, 1, 0.5)
+                paint(b, solid((0.08, 0.03, 0.02)))
+                parts.append(b)
     return parts
 
 
 def avocado_whole():
-    a = add("primitive_uv_sphere_add", "avocado", MATTE, radius=0.1, location=(0, 0, 0.13), segments=24, ring_count=14)
-    a.scale = (1, 1, 1.35)
+    """A halved avocado lying cut side up: dark skin, pale flesh and a big brown stone."""
+    a = add("primitive_uv_sphere_add", "skin", MATTE, radius=0.1, location=(0, 0, 0.0), segments=16, ring_count=10)
+    a.scale = (1.35, 1, 1)
     bpy.ops.object.transform_apply(scale=True)
     for v in a.data.vertices:
-        v.co.x *= 1 - 0.25 * max(0, (v.co.z - 0.13) / 0.13)
-        v.co.y *= 1 - 0.25 * max(0, (v.co.z - 0.13) / 0.13)
+        v.co.y *= 1 - 0.25 * max(0, v.co.x / 0.135)  # pear-shaped
+    for v in a.data.vertices:
+        v.co.z = min(v.co.z, 0.0) + 0.1  # cut flat at the top, base at z=0
+    a.location = (0, 0, 0)
     smooth(a, 1)
-    bumpy(a, 0.006, 0.015)
-    paint(a, lambda co, n: mix((0.12, 0.22, 0.08), (0.24, 0.36, 0.12), noise.noise(co * 40) * 0.5 + 0.5))
-    return [a]
-
+    paint(a, lambda co, n: mix((0.95, 0.92, 0.5), (0.55, 0.75, 0.25), min(1, math.hypot(co.x * 0.8, co.y) * 9)) if co.z > 0.098 else mix((0.1, 0.18, 0.06), (0.2, 0.3, 0.1), noise.noise(co * 40) * 0.5 + 0.5))
+    pit = add("primitive_uv_sphere_add", "pit", GLAZE, radius=0.048, location=(-0.025, 0, 0.1), segments=12, ring_count=7)
+    pit.scale = (1.1, 1, 0.8)
+    paint(pit, lambda co, n: mix((0.55, 0.3, 0.14), (0.35, 0.18, 0.08), noise.noise(co * 50) * 0.5 + 0.5))
+    return [a, pit]
 
 def avocado_diced():
     parts = []
@@ -396,19 +440,22 @@ def avocado_diced():
 
 
 def wasabi_root():
-    w = add("primitive_cylinder_add", "root", MATTE, radius=0.05, depth=0.24, location=(0, 0, 0.12), vertices=16)
-    for v in w.data.vertices:
-        v.co.x *= 1 + 0.15 * math.sin(v.co.z * 60)
-        v.co.y *= 1 + 0.15 * math.sin(v.co.z * 60)
-    smooth(w, 1)
-    bumpy(w, 0.008, 0.02)
-    paint(w, lambda co, n: mix((0.45, 0.62, 0.28), (0.3, 0.42, 0.18), max(0, math.sin(co.z * 60))))
-    parts = [w]
+    """A knobbly rhizome with big bright leaves on top."""
+    parts = []
+    for k, (z, r) in enumerate([(0.04, 0.055), (0.095, 0.058), (0.15, 0.052), (0.2, 0.045)]):
+        s = add("primitive_uv_sphere_add", f"knob{k}", MATTE, radius=r, location=(0.006 * (k % 2), 0, z), segments=12, ring_count=7)
+        s.scale = (1, 1, 0.8)
+        smooth(s, 0)
+        paint(s, lambda co, n: mix((0.55, 0.7, 0.32), (0.36, 0.48, 0.2), noise.noise(co * 40) * 0.5 + 0.5))
+        parts.append(s)
     for k in range(3):
-        leaf = add("primitive_uv_sphere_add", f"leaf{k}", FOOD, radius=0.06, location=(math.cos(k * 2.1) * 0.04, math.sin(k * 2.1) * 0.04, 0.27))
-        leaf.scale = (1, 1, 0.3)
-        paint(leaf, solid((0.18, 0.5, 0.15)))
-        parts.append(leaf)
+        a = k * 2.1
+        stem = add("primitive_cylinder_add", f"stem{k}", FOOD, radius=0.008, depth=0.12, location=(math.cos(a) * 0.02, math.sin(a) * 0.02, 0.27), vertices=6, rotation=(math.sin(a) * -0.35, math.cos(a) * 0.35, 0))
+        paint(stem, solid((0.3, 0.55, 0.2)))
+        leaf = add("primitive_uv_sphere_add", f"leaf{k}", FOOD, radius=0.07, location=(math.cos(a) * 0.06, math.sin(a) * 0.06, 0.33), segments=12, ring_count=6)
+        leaf.scale = (1, 1, 0.25)
+        paint(leaf, lambda co, n: mix((0.1, 0.36, 0.1), (0.24, 0.55, 0.16), max(0, n.z)))
+        parts += [stem, leaf]
     return parts
 
 
@@ -428,12 +475,14 @@ def wasabi_chutney():
 
 
 def plate():
-    p = add("primitive_cylinder_add", "plate", CERAMIC, radius=0.28, depth=0.03, location=(0, 0, 0.015), vertices=40)
-    p.modifiers.new("bev", "BEVEL").width = 0.012
+    """White porcelain with an indigo rim: the rim body, then a white well on top."""
+    p = add("primitive_cylinder_add", "plate", CERAMIC, radius=0.28, depth=0.03, location=(0, 0, 0.015), vertices=32)
+    p.modifiers.new("bev", "BEVEL").width = 0.01
     smooth(p, 0)
-    paint(p, lambda co, n: (0.15, 0.3, 0.6) if math.hypot(co.x, co.y) > 0.25 and co.z > 0 else (0.97, 0.97, 0.95))
-    return [p]
-
+    paint(p, lambda co, n: (0.16, 0.28, 0.62) if co.z > 0 else (0.95, 0.95, 0.93))
+    well = add("primitive_cylinder_add", "well", CERAMIC, radius=0.215, depth=0.006, location=(0, 0, 0.031), vertices=32)
+    paint(well, solid((0.98, 0.98, 0.96)))
+    return [p, well]
 
 FILL = {
     "fish": (1.0, 0.5, 0.33), "lobster": (0.95, 0.35, 0.25), "tomato": (0.8, 0.15, 0.1),
@@ -458,12 +507,10 @@ def dish_maki():
 
 def dish_temaki():
     parts = plate()
-    cone = nori_cone([FILL["fish"], FILL["avocado"], FILL["tomato"]])
-    for p in cone:
-        p.rotation_euler.rotate_axis("X", -0.9)
-        p.location = (p.location.x, p.location.y - 0.04, p.location.z + 0.06)
-    return parts + cone
-
+    cone = join(nori_cone([FILL["fish"], FILL["avocado"], FILL["tomato"]], rice=True), "temaki", origin=(0, 0, 0))
+    cone.rotation_euler = (math.radians(62), 0, math.radians(-20))
+    cone.location = (0.03, 0.15, 0.055)
+    return parts + [cone]
 
 ITEMS = {
     "rice_raw": rice_raw, "rice_cooked": rice_cooked, "rice_burnt": rice_burnt, "sushi_rice": sushi_rice,
@@ -492,14 +539,14 @@ def build():
         parts = fn()
         group(name, parts, next_slot())
     path = os.path.join(OUT, "food.glb")
-    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_apply=True, export_yup=True, use_selection=False)
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_apply=True, export_yup=True, use_selection=False, export_texcoords=False)
     print(f"exported {path} ({os.path.getsize(path) // 1024} KB)")
 
 
 def preview():
     scn = bpy.context.scene
     scn.render.engine = "BLENDER_EEVEE_NEXT"
-    scn.render.resolution_x, scn.render.resolution_y = 1280, 720
+    scn.render.resolution_x, scn.render.resolution_y = 1600, 1000
     scn.view_settings.view_transform = "Standard"
     w = bpy.data.worlds.new("w")
     w.use_nodes = True
@@ -511,11 +558,24 @@ def preview():
     bpy.ops.object.light_add(type="AREA", location=(2.4, -1.5, 2))
     bpy.context.active_object.data.energy = 300
     bpy.context.active_object.data.size = 4
-    cx, cy = 3.5 * SPACING, 1.0 * SPACING
-    bpy.ops.object.camera_add(location=(cx, cy - 3.6, 3.6))
+    # labels under each item (preview only; the glb is already exported)
+    lab = bpy.data.materials.new("Label")
+    lab.use_nodes = True
+    lab.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.9, 0.85, 0.75, 1)
+    for i, name in enumerate(ITEMS):
+        x, y = (i % 8) * SPACING, (i // 8) * SPACING
+        bpy.ops.object.text_add(location=(x, y - 0.27, 0.0))
+        t = bpy.context.active_object
+        t.data.body = name
+        t.data.size = 0.06
+        t.data.align_x = "CENTER"
+        t.data.materials.append(lab)
+    cx, cy = 3.5 * SPACING, 1.5 * SPACING
+    bpy.ops.object.camera_add(location=(cx, cy - 4.0, 4.6))
     cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(45), 0, 0)
-    cam.data.lens = 28
+    cam.rotation_euler = (math.radians(41), 0, 0)
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = 6.0
     scn.camera = cam
     scn.render.filepath = os.path.join(PREV, "food.png")
     bpy.ops.render.render(write_still=True)
