@@ -1,10 +1,11 @@
 import './style.css';
-import { CARD_INFO, CARDS, RECIPES, stateHash, type Card, type LogEntry, type Result, type SimEvent, type State } from '@sushi/rules';
+import { CARD_INFO, CARDS, stateHash, type Card, type LogEntry, type Result, type SimEvent, type State } from '@sushi/rules';
 import { api, explorer, explorerAccount, type Me, type ServerConfig } from './api.ts';
 import { isMuted, setMuted, sfx } from './audio.ts';
 import { RoomShift, SoloShift, type Shift } from './game.ts';
+import { Walkthrough, howToPlay, onboarded, tutorialDone, welcome } from './onboarding.ts';
 import { CHEF_COLORS, KitchenScene } from './scene.ts';
-import { $, h, mount, toast } from './ui.ts';
+import { $, h, modalOpen, mount, saved, toast } from './ui.ts';
 import { call, setContract, signIn, signOut } from './wallet.ts';
 
 const ui = $('#ui');
@@ -19,6 +20,8 @@ const store = {
   set name(v: string) { try { localStorage.setItem('sushi.name', v); } catch { /* */ } },
   get difficulty(): Difficulty { try { const d = localStorage.getItem('sushi.difficulty'); return d === 'easy' || d === 'hard' ? d : 'normal'; } catch { return 'normal'; } },
   set difficulty(v: Difficulty) { try { localStorage.setItem('sushi.difficulty', v); } catch { /* */ } },
+  /** Whether the player ever picked a level (first-timers get Easy preselected for the walkthrough). */
+  get pickedDifficulty(): boolean { return saved.get('sushi.difficulty') !== null; },
 };
 
 // ---------- AI chef difficulty ----------
@@ -32,7 +35,7 @@ const LEVELS: { id: Difficulty; label: string; hint: string }[] = [
 const levelLabel = (d: string | undefined): string => LEVELS.find((l) => l.id === d)?.label ?? 'Normal';
 
 /** Easy / Normal / Hard. Remembered in this browser. */
-function difficultyPicker(current: Difficulty, pick: (d: Difficulty) => void): HTMLElement {
+function difficultyPicker(current: Difficulty, pick: (d: Difficulty) => void, label = 'AI chefs'): HTMLElement {
   const hint = h('p', { class: 'dim small' }, LEVELS.find((l) => l.id === current)!.hint);
   const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'AI chef difficulty' }, ...LEVELS.map((l) => h('button', {
     class: l.id === current ? 'on' : '', role: 'radio', 'aria-checked': String(l.id === current), title: l.hint,
@@ -43,13 +46,13 @@ function difficultyPicker(current: Difficulty, pick: (d: Difficulty) => void): H
       pick(l.id);
     },
   }, l.label)));
-  return h('div', { class: 'difficulty' }, h('small', { class: 'dim' }, 'AI chefs'), seg, hint);
+  return h('div', { class: 'difficulty' }, h('small', { class: 'field-label' }, label), seg, hint);
 }
 
 // ---------- boot ----------
 
 async function boot(): Promise<void> {
-  mount(ui, h('div', { class: 'panel center' }, h('h1', { class: 'logo' }, 'Sushi Sabotage'), h('p', {}, 'Lighting the lanterns…')));
+  mount(ui, h('div', { class: 'panel center loading' }, logo(), h('p', { class: 'dim' }, 'Lighting the lanterns…'), h('div', { class: 'spinner', 'aria-hidden': 'true' })));
   await scene.load();
   scene.build(['', '', '', ''], 0);
   scene.overview = true;
@@ -58,6 +61,7 @@ async function boot(): Promise<void> {
   if (cfg) setContract(cfg.contract);
   me = await api<Me>('/me').catch(() => null); // signed in if the session cookie is still good
   title();
+  if (!onboarded()) welcome(() => solo(3, 'easy'));
 }
 
 function idleLoop(): void {
@@ -68,15 +72,23 @@ function idleLoop(): void {
 
 const chefName = (): string => (me?.raw?.kind.Chef?.name ?? store.name) || 'Chef';
 
+function logo(small = false): HTMLElement {
+  return h(small ? 'span' : 'h1', { class: small ? 'logo small' : 'logo' }, h('span', { class: 'roll', 'aria-hidden': 'true' }), 'Sushi', h('em', {}, 'Sabotage'));
+}
+
+let page = 'title';
 function nav(): HTMLElement {
+  const item = (id: string, label: string, fn: () => void): HTMLElement => h('button', { class: page === id ? 'on' : '', 'aria-current': page === id ? 'page' : undefined, onclick: fn }, label);
   return h('nav', { class: 'nav' },
-    h('button', { onclick: title }, 'Kitchen'),
-    h('button', { onclick: market }, 'Night Market'),
-    h('button', { onclick: myChef }, 'My Chef'),
-    h('button', { onclick: board }, 'Leaderboard'),
-    h('button', { onclick: agents }, 'Agents'),
-    h('button', { onclick: howTo }, 'How to play'),
-    h('button', { class: 'mute', onclick: (e: Event) => { setMuted(!isMuted()); (e.target as HTMLElement).textContent = isMuted() ? '🔇' : '🔊'; } }, isMuted() ? '🔇' : '🔊'));
+    h('button', { class: 'brand', onclick: title, 'aria-label': 'Sushi Sabotage: back to the kitchen' }, logo(true)),
+    h('div', { class: 'nav-links' },
+      item('title', 'Kitchen', title),
+      item('market', 'Night Market', market),
+      item('chef', 'My Chef', myChef),
+      item('board', 'Leaderboard', board),
+      item('agents', 'Agents', agents),
+      h('button', { onclick: howTo }, 'How to play'),
+      h('button', { class: 'mute', 'aria-label': 'Sound on/off', onclick: (e: Event) => { setMuted(!isMuted()); (e.currentTarget as HTMLElement).textContent = isMuted() ? '🔇' : '🔊'; } }, isMuted() ? '🔇' : '🔊')));
 }
 
 function walletBadge(): HTMLElement {
@@ -97,19 +109,37 @@ async function doSignIn(): Promise<void> {
 
 function title(): void {
   stopShift();
+  page = 'title';
   scene.overview = true;
-  const name = h('input', { value: chefName(), maxlength: 20, placeholder: 'Your chef name', oninput: (e: Event) => { store.name = (e.target as HTMLInputElement).value.replace(/[^A-Za-z0-9 _-]/g, ''); } });
+  const name = h('input', { id: 'chef-name', value: chefName(), maxlength: 20, placeholder: 'Your chef name', autocomplete: 'nickname', oninput: (e: Event) => { store.name = (e.target as HTMLInputElement).value.replace(/[^A-Za-z0-9 _-]/g, ''); } });
+  const first = !tutorialDone();
   let rivals = 3;
-  let level = store.difficulty;
-  const rivalBtns = h('div', { class: 'seg' }, ...[1, 2, 3].map((n) => h('button', { class: n === rivals ? 'on' : '', onclick: (e: Event) => { rivals = n; [...(e.target as HTMLElement).parentElement!.children].forEach((b, k) => b.classList.toggle('on', k + 1 === n)); } }, `${n} rival${n > 1 ? 's' : ''}`)));
-  const code = h('input', { placeholder: 'ROOM', maxlength: 4, class: 'code', oninput: (e: Event) => { (e.target as HTMLInputElement).value = (e.target as HTMLInputElement).value.toUpperCase(); } });
+  let level: Difficulty = first && !store.pickedDifficulty ? 'easy' : store.difficulty;
+  const rivalBtns = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Rivals' }, ...[1, 2, 3].map((n) => h('button', { class: n === rivals ? 'on' : '', role: 'radio', 'aria-checked': String(n === rivals), onclick: (e: Event) => { rivals = n; [...(e.currentTarget as HTMLElement).parentElement!.children].forEach((b, k) => { b.classList.toggle('on', k + 1 === n); b.setAttribute('aria-checked', String(k + 1 === n)); }); } }, `${n} rival${n > 1 ? 's' : ''}`)));
+  const code = h('input', { placeholder: 'ROOM', maxlength: 4, class: 'code', 'aria-label': 'Room code', oninput: (e: Event) => { (e.target as HTMLInputElement).value = (e.target as HTMLInputElement).value.toUpperCase(); }, onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') room({ t: 'join', code: code.value }); } });
   mount(ui, nav(), h('div', { class: 'panel title' },
-    h('h1', { class: 'logo' }, 'Sushi Sabotage'),
-    h('p', { class: 'tag' }, 'Roll it, sear it, serve it. Wreck your rivals’ dishes while they cook. Nobody sees who did it until the shift ends.'),
-    walletBadge(),
-    h('label', {}, 'Chef name', name),
-    h('div', { class: 'row' }, h('div', { class: 'col' }, h('h3', {}, 'Solo shift'), h('p', { class: 'dim' }, 'You vs AI chefs with their own NEAR wallets.'), rivalBtns, difficultyPicker(level, (d) => { level = d; }), h('button', { class: 'big', onclick: () => solo(rivals, level) }, 'Start shift')),
-      h('div', { class: 'col' }, h('h3', {}, 'Multiplayer'), h('p', { class: 'dim' }, '2–4 chefs. Fill empty pods with AI.'), h('button', { class: 'big', onclick: () => room({ t: 'create' }) }, 'Create room'), h('div', { class: 'join' }, code, h('button', { onclick: () => room({ t: 'join', code: code.value }) }, 'Join')))),
+    h('header', { class: 'hero' },
+      logo(),
+      h('p', { class: 'tag' }, 'Roll it, sear it, serve it. Wreck your rivals’ dishes while they cook. Nobody sees who did it until the shift ends.')),
+    h('div', { class: 'who' },
+      h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Chef name'), name),
+      walletBadge()),
+    // the lead's chef card / "Mint your chef — free" call to action renders here
+    h('div', { id: 'chef-slot', class: 'slot' }),
+    h('div', { class: 'modes' },
+      h('section', { class: 'mode solo' },
+        h('div', { class: 'mode-head' }, h('span', { class: 'mode-icon', 'aria-hidden': 'true' }, '🍣'), h('div', {}, h('h3', {}, 'Solo shift'), h('p', { class: 'dim' }, 'You vs AI chefs with their own NEAR wallets.'))),
+        h('div', {}, h('small', { class: 'field-label' }, 'Rivals'), rivalBtns),
+        difficultyPicker(level, (d) => { level = d; }),
+        first ? h('p', { class: 'firsttip' }, '✨ First shift? A coach walks you through it, step by step. Easy chefs are a good start.') : null,
+        h('button', { class: 'big', onclick: () => solo(rivals, level) }, first ? 'Start my first shift' : 'Start shift')),
+      h('section', { class: 'mode multi' },
+        h('div', { class: 'mode-head' }, h('span', { class: 'mode-icon', 'aria-hidden': 'true' }, '🏮'), h('div', {}, h('h3', {}, 'Multiplayer'), h('p', { class: 'dim' }, '2–4 chefs in one street. Fill empty stalls with AI.'))),
+        h('button', { class: 'big alt', onclick: () => room({ t: 'create' }) }, 'Create room'),
+        h('div', {}, h('small', { class: 'field-label' }, 'Have a code?'), h('div', { class: 'join' }, code, h('button', { onclick: () => room({ t: 'join', code: code.value }) }, 'Join'))))),
+    h('div', { class: 'title-links' },
+      h('button', { class: 'link', onclick: howTo }, 'How to play'),
+      h('button', { class: 'link', onclick: () => welcome(() => solo(3, 'easy')) }, 'The intro again')),
     h('p', { class: 'foot' }, 'NEAR testnet · contract ', h('a', { href: explorerAccount(cfg?.contract ?? ''), target: '_blank' }, cfg?.contract ?? '…'), ' · part of the NEAR Arcade')));
 }
 
@@ -118,12 +148,12 @@ function stopShift(): void { shift?.stop(); shift = null; hud.replaceChildren();
 function countdown(then: () => void, line?: { who: string; text: string; signed: boolean } | null): void {
   let n = 3;
   const box = h('div', { class: 'count' }, '3');
-  mount(ui, h('div', { class: 'panel center' }, line ? h('blockquote', { class: 'taunt' }, `“${line.text}”`, h('cite', {}, `— ${line.who}${line.signed ? ' · signed by a TEE model on NEAR AI' : ''}`)) : null, box));
+  mount(ui, h('div', { class: 'panel center countdown' }, line ? h('blockquote', { class: 'taunt' }, `“${line.text}”`, h('cite', {}, `— ${line.who}${line.signed ? ' · signed by a TEE model on NEAR AI' : ''}`)) : null, box));
   sfx.tick();
   const t = setInterval(() => {
     n--;
     if (n <= 0) { clearInterval(t); sfx.go(); mount(ui); then(); return; }
-    box.textContent = String(n); sfx.tick();
+    box.textContent = String(n); box.classList.remove('beat'); void box.offsetWidth; box.classList.add('beat'); sfx.tick();
   }, 1000);
 }
 
@@ -133,12 +163,27 @@ async function solo(rivals: number, difficulty: Difficulty): Promise<void> {
   try {
     const r = await api<{ matchId: string; setup: { seed: string; chefs: { name: string }[] }; ranked: boolean; fee: number; seedHash: string; line: { who: string; text: string; signed: boolean } | null }>('/solo/start', { name: chefName(), bots: rivals, loadout: loadoutChoice(), difficulty });
     scene.overview = false;
+    lastSolo = { rivals, difficulty };
+    const coach = !tutorialDone();
     countdown(() => {
-      shift = new SoloShift(scene, r.setup as never, hud, async ({ state, log }) => {
+      const s = new SoloShift(scene, r.setup as never, hud, async ({ state, log }) => {
         setTimeout(() => void soloEnd(r.matchId, state, log, r.ranked), 900);
       });
+      s.canPause = !r.ranked;
+      s.openHelp = () => shiftHelp(s);
+      shift = s;
+      if (coach) new Walkthrough(s, hud, () => { /* remembered by the walkthrough */ });
     }, r.line);
   } catch (e) { toast((e as Error).message, 'bad'); }
+}
+
+let lastSolo: { rivals: number; difficulty: Difficulty } | null = null;
+
+/** How to play during a shift: a solo, unranked shift pauses while it's open. */
+function shiftHelp(s: Shift): void {
+  if (modalOpen()) return;
+  if (s.canPause) s.paused = true;
+  howToPlay({ inShift: true, replay: () => toast('The walkthrough runs in your next solo shift', 'good'), onClose: () => { s.paused = false; } });
 }
 
 async function soloEnd(matchId: string, state: State, log: LogEntry[], ranked: boolean): Promise<void> {
@@ -151,7 +196,7 @@ async function soloEnd(matchId: string, state: State, log: LogEntry[], ranked: b
     whodunitPanel({ hits, until: Date.now() + 30_000, names }, 0, resolve,
       ranked ? 'Ranked solo: your browser ran the sim, so your guesses are for fun and don’t score. The AI chefs’ guesses do.' : 'Who hit you? Right: +40 to you, −40 to them. Wrong: −10.');
   });
-  mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Shift over!'), h('p', {}, 'The referee is re-running your shift to check it…')));
+  mount(ui, h('div', { class: 'panel center' }, h('h2', { class: 'display' }, 'Shift over!'), h('p', {}, 'The referee is re-running your shift to check it…'), h('div', { class: 'spinner', 'aria-hidden': 'true' })));
   try {
     const r = await api<ResultsMsg>('/solo/finish', { matchId, log, stateHash: stateHash(state), accusations });
     results({ ...r, txs: [], names, you: 0, solo: true });
@@ -187,7 +232,7 @@ function room(first: { t: 'create' } | { t: 'join'; code: string }): void {
       case 'error': toast(String(m.msg), 'bad'); break;
       case 'kicked': toast('The host removed you', 'bad'); title(); break;
       case 'room': lobby(sock, m as unknown as LobbyMsg); break;
-      case 'start': names = m.names as string[]; you = m.you as number; scene.overview = false; countdown(() => { shift = new RoomShift(scene, you, names, hud, sock); }); break;
+      case 'start': names = m.names as string[]; you = m.you as number; scene.overview = false; countdown(() => { const s = new RoomShift(scene, you, names, hud, sock); s.openHelp = () => shiftHelp(s); shift = s; }); break;
       case 'line': toast(`${m.who}: “${m.text}”`); break;
       case 'snap': if (shift instanceof RoomShift) shift.snapshot(m.s as State, m.ev as SimEvent[]); break;
       case 'whodunit': if (shift) shift.ended = true; stopShift(); scene.overview = true; whodunit(sock, m as unknown as WhoMsg, you); break;
@@ -200,23 +245,24 @@ interface LobbyMsg { code: string; phase: string; difficulty?: Difficulty; seats
 function lobby(sock: WebSocket, m: LobbyMsg): void {
   if (m.phase !== 'lobby') return;
   const mine = m.seats[m.you];
-  mount(ui, nav(), h('div', { class: 'panel' },
-    h('h2', {}, 'Room ', h('span', { class: 'roomcode' }, m.code)),
+  page = 'lobby';
+  mount(ui, nav(), h('div', { class: 'panel lobby' },
+    h('h2', {}, 'Room ', h('button', { class: 'roomcode', title: 'Copy the code', onclick: () => { void navigator.clipboard?.writeText(m.code).then(() => toast('Room code copied', 'good'), () => {}); } }, m.code)),
     h('p', { class: 'dim' }, 'Share the code. Everyone presses Ready to start. Empty pods stay empty unless the host adds an AI chef.'),
-    h('ul', { class: 'seats' }, ...m.seats.map((s, i) => h('li', { style: `--c:${hex(CHEF_COLORS[i % 4])}` }, h('span', { class: 'dot' }), h('b', {}, s.name), h('small', {}, s.kind === 'bot' ? 'AI chef · own NEAR wallet' : s.signedIn ? 'NEAR wallet' : 'guest'), s.ready ? h('em', {}, 'ready') : h('em', { class: 'dim' }, 'not ready'),
+    h('ul', { class: 'seats' }, ...m.seats.map((s, i) => h('li', { class: s.ready ? 'ready' : '', style: `--c:${hex(CHEF_COLORS[i % 4])}` }, h('span', { class: 'dot' }), h('b', {}, s.name, i === m.you ? ' (you)' : ''), h('small', {}, s.kind === 'bot' ? 'AI chef · own NEAR wallet' : s.signedIn ? 'NEAR wallet' : 'guest'), s.ready ? h('em', {}, 'ready') : h('em', { class: 'dim' }, 'not ready'),
       m.host && i !== m.you ? h('button', { class: 'link', onclick: () => sock.send(JSON.stringify({ t: 'kick', seat: i })) }, 'remove') : null))),
     h('div', { class: 'row' },
       m.host && m.seats.length < 4 ? h('button', { onclick: () => sock.send(JSON.stringify({ t: 'addBot' })) }, 'Add AI chef') : null,
       m.host
         ? difficultyPicker(m.difficulty ?? 'normal', (level) => sock.send(JSON.stringify({ t: 'difficulty', level })))
         : h('p', { class: 'dim' }, `AI chefs: ${levelLabel(m.difficulty)} (the host picks)`),
-      h('button', { class: 'big', onclick: () => sock.send(JSON.stringify({ t: 'ready', ready: !mine.ready, loadout: loadoutChoice() })) }, mine.ready ? 'Not ready' : 'Ready'),
+      h('button', { class: mine.ready ? 'big alt' : 'big', onclick: () => sock.send(JSON.stringify({ t: 'ready', ready: !mine.ready, loadout: loadoutChoice() })) }, mine.ready ? 'Not ready' : 'Ready'),
       h('button', { class: 'ghost', onclick: () => { sock.send(JSON.stringify({ t: 'leave' })); sock.close(); title(); } }, 'Leave'))));
 }
 
 interface WhoMsg { hits: { sab: number; card: Card; tick: number; blocked: boolean }[]; until: number; names: string[] }
 function whodunit(sock: WebSocket, m: WhoMsg, you: number): void {
-  if (!m.hits.length) { mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Whodunit'), h('p', {}, 'Nobody sabotaged you this shift. Waiting for the others to accuse…'))); return; }
+  if (!m.hits.length) { mount(ui, h('div', { class: 'panel center' }, h('h2', { class: 'display' }, 'Whodunit'), h('p', {}, 'Nobody sabotaged you this shift. Waiting for the others to accuse…'))); return; }
   whodunitPanel(m, you, (list) => { sock.send(JSON.stringify({ t: 'accuse', list })); mount(ui, h('div', { class: 'panel center' }, h('h2', {}, 'Accusations sealed'), h('p', {}, 'Waiting for the reveal…'))); });
 }
 
@@ -225,41 +271,63 @@ function whodunitPanel(m: WhoMsg, you: number, submit: (list: { sab: number; acc
   const picks = new Map<number, number>();
   let sent = false;
   const send = (): void => { if (sent) return; sent = true; clearInterval(iv); submit([...picks].map(([sab, accused]) => ({ sab, accused }))); };
-  const timer = h('span', { class: 'dim' });
+  const timer = h('span', { class: 'timer' });
   // when time runs out, whatever you picked is sealed (unpicked hits count as a pass)
   const iv = setInterval(() => { const s = Math.max(0, Math.ceil((m.until - Date.now()) / 1000)); timer.textContent = `${s}s`; if (s <= 0) send(); }, 250);
-  mount(ui, h('div', { class: 'panel' },
-    h('h2', {}, 'Whodunit? ', timer),
+  mount(ui, h('div', { class: 'panel whodunit' },
+    h('h2', { class: 'display' }, 'Whodunit? ', timer),
     h('p', { class: 'dim' }, note ?? 'For each sabotage that hit you, name the culprit. Right: +40 to you, −40 to them. Wrong: −10. The seals open onchain next.'),
     h('div', { class: 'hits' }, ...m.hits.map((x) => h('div', { class: 'hit' },
-      h('b', {}, CARD_INFO[x.card].name), h('small', {}, ` at ${Math.floor(x.tick / 20)}s${x.blocked ? ' (blocked)' : ''}`),
+      h('div', { class: 'hit-what' }, h('b', {}, CARD_INFO[x.card].name), h('small', { class: 'dim' }, ` at ${fmtClock(x.tick)}${x.blocked ? ' (blocked)' : ''} · ${CARD_INFO[x.card].blurb}`)),
       h('div', { class: 'seg' }, ...m.names.map((n, i) => (i === you ? null : h('button', { onclick: (e: Event) => { picks.set(x.sab, i); [...(e.target as HTMLElement).parentElement!.children].forEach((b) => b.classList.remove('on')); (e.target as HTMLElement).classList.add('on'); } }, n))), h('button', { class: 'on', onclick: (e: Event) => { picks.delete(x.sab); [...(e.target as HTMLElement).parentElement!.children].forEach((b) => b.classList.remove('on')); (e.target as HTMLElement).classList.add('on'); } }, 'pass'))))),
     h('button', { class: 'big', onclick: send }, 'Seal my accusations')));
 }
 
 interface ResultsMsg { difficulty?: string; verified?: boolean; stateHash?: string; results: Result[]; reveal: { caster: number; target: number; card: Card; tick: number; blocked: boolean; fizzled: boolean }[]; accusations: { victim: number; sab: number; accused: number }[]; matchId: string; txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string }
+const fmtClock = (tick: number): string => { const t = Math.floor(tick / 20); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+
 function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean }): void {
   stopShift();
+  page = 'results';
   scene.overview = true;
   const sorted = [...r.results].sort((a, b) => a.rank - b.rank);
   const accused = new Map(r.accusations.map((a) => [a.sab, a]));
+  const mine = sorted.find((x) => x.chef === r.you);
   const won = sorted[0]?.chef === r.you;
-  if (won) sfx.deliver();
+  if (won) sfx.fanfare(); else sfx.deliver();
+  const color = (i: number): string => hex(CHEF_COLORS[i % 4]);
+  const place = ['1st', '2nd', '3rd', '4th'];
+  // podium: 2nd, 1st, 3rd (and 4th to the side)
+  const podium = [sorted[1], sorted[0], sorted[2]].filter((x): x is Result => !!x);
+  const delta = (d: number): string => (d ? (d > 0 ? `+${d}` : String(d)) : '—');
   mount(ui, nav(), h('div', { class: 'panel results' },
-    h('h2', {}, won ? 'You ran the best kitchen tonight!' : 'Shift results'),
-    r.difficulty ? h('p', { class: 'dim' }, `AI chefs: ${levelLabel(r.difficulty)}`) : null,
-    h('table', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Chef'), h('th', {}, 'Shift'), h('th', {}, 'Whodunit'), h('th', {}, 'Final')),
-      ...sorted.map((x) => h('tr', { class: x.chef === r.you ? 'you' : '' }, h('td', {}, String(x.rank)), h('td', { style: `color:${hex(CHEF_COLORS[x.chef % 4])}` }, x.name), h('td', {}, String(x.shiftScore)), h('td', {}, x.accuseDelta ? (x.accuseDelta > 0 ? `+${x.accuseDelta}` : String(x.accuseDelta)) : '—'), h('td', {}, h('b', {}, String(x.final)))))),
+    h('header', { class: 'res-head' },
+      h('h2', { class: 'display' }, won ? 'You ran the best kitchen tonight!' : mine ? `You finished ${place[mine.rank - 1] ?? `#${mine.rank}`}` : 'Shift results'),
+      r.difficulty ? h('span', { class: 'pill' }, `AI chefs: ${levelLabel(r.difficulty)}`) : null,
+      r.ranked ? h('span', { class: 'pill hot' }, 'Ranked') : null),
+    h('div', { class: 'podium' }, ...podium.map((x) => h('div', { class: `step p${x.rank}${x.chef === r.you ? ' you' : ''}`, style: `--c:${color(x.chef)}` },
+      h('div', { class: 'who' }, x.rank === 1 ? h('span', { class: 'crown', 'aria-hidden': 'true' }, '👑') : null, h('b', {}, x.name), x.chef === r.you ? h('small', {}, 'you') : null),
+      h('div', { class: 'block' }, h('span', { class: 'place' }, place[x.rank - 1]), h('span', { class: 'pts' }, String(x.final)))))),
+    h('table', { class: 'scores' }, h('thead', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Chef'), h('th', {}, 'Shift'), h('th', {}, 'Whodunit'), h('th', {}, 'Final'))),
+      h('tbody', {}, ...sorted.map((x) => h('tr', { class: x.chef === r.you ? 'you' : '' }, h('td', {}, String(x.rank)), h('td', {}, h('span', { class: 'dot', style: `--c:${color(x.chef)}` }), ' ', x.name), h('td', {}, String(x.shiftScore)), h('td', { class: x.accuseDelta > 0 ? 'good' : x.accuseDelta < 0 ? 'bad' : 'dim' }, delta(x.accuseDelta)), h('td', {}, h('b', {}, String(x.final))))))),
+    r.solo ? h('p', { class: `verdict ${r.verified ? 'good' : 'bad'}` }, r.verified ? `✓ The referee re-ran your shift from the input log and reached the same state (${r.stateHash?.slice(0, 12)}…).` : '✗ The referee’s replay did not match your browser; the referee’s result stands.') : null,
+    // the lead's post-shift call to action (sign in / mint your chef) renders here
+    h('div', { id: 'results-cta', class: 'slot' }),
     h('h3', {}, 'The sealed sabotage log, opened'),
-    r.reveal.length ? h('ul', { class: 'reveal' }, ...r.reveal.map((x, k) => {
+    r.reveal.length ? h('ol', { class: 'reveal' }, ...r.reveal.map((x, k) => {
       const a = accused.get(k);
-      return h('li', {}, h('b', { style: `color:${hex(CHEF_COLORS[x.caster % 4])}` }, r.names[x.caster] ?? `#${x.caster}`), ` played ${CARD_INFO[x.card].name}`, CARD_INFO[x.card].self ? '' : ` on ${r.names[x.target]}`, ` at ${Math.floor(x.tick / 20)}s`, x.blocked ? ' (blocked)' : x.fizzled ? ' (fizzled)' : '',
-        a ? h('span', { class: a.accused === x.caster ? 'good' : 'bad' }, ` — ${r.names[a.victim]} accused ${r.names[a.accused]}${a.accused === x.caster ? ' ✓' : ' ✗'}`) : null);
+      return h('li', { style: `--c:${color(x.caster)}` }, h('span', { class: 'when' }, fmtClock(x.tick)),
+        h('span', {}, h('b', { style: `color:${color(x.caster)}` }, r.names[x.caster] ?? `#${x.caster}`), ` played `, h('b', {}, CARD_INFO[x.card].name), CARD_INFO[x.card].self ? '' : h('span', {}, ' on ', h('b', { style: `color:${color(x.target)}` }, r.names[x.target] ?? `#${x.target}`)),
+          x.blocked ? h('span', { class: 'tag-s' }, 'blocked') : x.fizzled ? h('span', { class: 'tag-s' }, 'fizzled') : null),
+        a ? h('span', { class: `acc ${a.accused === x.caster ? 'good' : 'bad'}` }, `${r.names[a.victim]} accused ${r.names[a.accused]} ${a.accused === x.caster ? '✓' : '✗'}`) : null);
     })) : h('p', { class: 'dim' }, 'Nobody played a card.'),
-    r.solo ? h('p', { class: r.verified ? 'good' : 'bad' }, r.verified ? `✓ The referee re-ran your shift from the input log and reached the same state (${r.stateHash?.slice(0, 12)}…).` : '✗ The referee’s replay did not match your browser; the referee’s result stands.') : null,
-    r.solo ? h('p', { class: 'dim' }, r.ranked ? 'Ranked solo: your browser ran the sim, so only the AI chefs’ accusations score. In multiplayer the server never tells anyone who cast what.' : 'Solo, unranked: your accusations scored. In multiplayer the server never tells anyone who cast what.') : null,
+    r.solo ? h('p', { class: 'dim small' }, r.ranked ? 'Ranked solo: your browser ran the sim, so only the AI chefs’ accusations score. In multiplayer the server never tells anyone who cast what.' : 'Solo, unranked: your accusations scored. In multiplayer the server never tells anyone who cast what.') : null,
+    h('h3', {}, 'Onchain proof'),
     h('div', { class: 'proof', id: 'proof' }, proofLinks(r)),
-    h('div', { class: 'row' }, h('button', { class: 'big', onclick: title }, 'Back to the kitchen'), h('a', { class: 'btn ghost', href: `/api/match/${r.matchId}`, target: '_blank' }, 'Proof bundle (JSON)'))));
+    h('div', { class: 'row actions' },
+      r.solo && lastSolo ? h('button', { class: 'big', onclick: () => solo(lastSolo!.rivals, lastSolo!.difficulty) }, 'Play again') : null,
+      h('button', { class: r.solo && lastSolo ? 'ghost' : 'big', onclick: title }, 'Back to the kitchen'),
+      h('a', { class: 'btn ghost', href: `/api/match/${r.matchId}`, target: '_blank' }, 'Proof bundle (JSON)'))));
 }
 
 function proofLinks(r: { txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string; matchId: string }): HTMLElement {
@@ -283,6 +351,7 @@ function pollTxs(matchId: string, tries = 0): void {
 
 async function market(): Promise<void> {
   stopShift();
+  page = 'market';
   const m = await api<{ prices: Record<Card, number> }>('/market').catch(() => null);
   if (!m) { toast('market closed', 'bad'); return; }
   let card: Card = 'wasabi_bomb';
@@ -323,6 +392,7 @@ async function market(): Promise<void> {
 
 async function myChef(): Promise<void> {
   stopShift();
+  page = 'chef';
   if (!me) {
     mount(ui, nav(), h('div', { class: 'panel center' }, h('h2', {}, 'Your Chef NFT'),
       h('p', {}, 'Sign in with a NEAR testnet wallet to mint a free Chef NFT. Its purse, card inventory and record live on the token itself: sell the chef and they go with it.'), walletBadge()));
@@ -366,6 +436,7 @@ async function fetchOwned(): Promise<{ token_id: string; metadata: { title: stri
 
 async function board(): Promise<void> {
   stopShift();
+  page = 'board';
   const [rows, matches] = await Promise.all([
     api<{ chef: string; name: string; best: number }[]>('/leaderboard').catch(() => []),
     api<{ id: string; mode: string; createdAt: number; names: string[]; results?: Result[]; settled: boolean; ranked: boolean }[]>('/matches').catch(() => []),
@@ -379,6 +450,7 @@ async function board(): Promise<void> {
 
 async function agents(): Promise<void> {
   stopShift();
+  page = 'agents';
   const a = await api<{ acts: { at: number; who: string; what: string; url?: string }[]; chefs: { name: string; account: string; skill: string }[] }>('/agents').catch(() => null);
   mount(ui, nav(), h('div', { class: 'panel' },
     h('h2', {}, 'The agents'),
@@ -388,20 +460,12 @@ async function agents(): Promise<void> {
     h('ul', { class: 'acts' }, ...(a?.acts ?? []).map((x) => h('li', {}, h('small', {}, new Date(x.at).toLocaleTimeString()), ' ', h('b', {}, x.who), ` ${x.what} `, x.url ? h('a', { href: x.url, target: '_blank' }, 'tx') : null)))));
 }
 
+/** The How to play sheet, from the nav or the title screen. */
 function howTo(): void {
-  stopShift();
-  mount(ui, nav(), h('div', { class: 'panel howto' },
-    h('h2', {}, 'How to play'),
-    h('p', {}, h('b', {}, 'Move'), ' WASD/arrows · ', h('b', {}, 'Pick up / place'), ' E or Space · ', h('b', {}, 'Chop'), ' F (tap repeatedly) · ', h('b', {}, 'Cards'), ' 1–6 · ', h('b', {}, 'Target'), ' Tab · ', h('b', {}, 'See all kitchens'), ' V'),
-    h('ul', {},
-      h('li', {}, 'Every dish = sushi rice + a base (nori roll for maki, cone for temaki) + seared fish or lobster + extras.'),
-      h('li', {}, 'Rice: cooker (3s) → board (3 chops). Fish/lobster: board → pan (3s, burns 5s later!). Tomato: board → pan. Avocado: 5 chops. Wasabi: board = slices; slices → pot (10s) = chutney. Nori sheet: 3 chops = roll. Cones need no prep.'),
-      h('li', {}, 'Grab a plate from the rack, put it on a counter, add ingredients, then carry it to the hatch.'),
-      h('li', {}, 'Deliveries charge your Mischief. Spend it on cards against a rival. They see the effect, never the culprit, until the seals open.'),
-      h('li', {}, 'After the shift: accuse. Right +40 (they lose 40), wrong −10.')),
-    h('h3', {}, 'The 20 recipes'),
-    h('div', { class: 'recipes' }, ...RECIPES.map((r) => h('div', {}, h('b', {}, r.name), h('small', {}, ` ${r.style} · ${r.protein}${r.depth ? ` + ${r.depth}` : ''}`))))));
+  if (modalOpen()) return;
+  howToPlay({ inShift: false, replay: () => { title(); welcome(() => solo(3, 'easy')); } });
 }
 
-if (location.search.includes("debug")) (window as unknown as { kitchen: unknown }).kitchen = scene;
+// testing aid: ?debug exposes the scene and the running shift
+if (location.search.includes('debug')) Object.defineProperties(window, { kitchen: { value: scene }, shift: { get: () => shift } });
 void boot();
