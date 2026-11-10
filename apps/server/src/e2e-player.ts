@@ -4,7 +4,10 @@
 // Steps: sign in through Better Auth + better-near-auth (NEP-413) -> mint chef, claim daily, approve
 // ranked fee, accept the Fixer's offer, all as gasless NEP-366 meta-transactions through the relayer
 // -> NEP-245 balance -> ranked solo shift with a card loadout -> settlement (pot, prizes, royalties)
-// -> leaderboard -> NEP-245 transfer of a card to an AI chef (a direct transaction: it needs 1 yocto).
+// -> leaderboard -> NEP-245 transfer of a card to an AI chef (a direct transaction: it needs 1 yocto)
+// -> a chef upgrade and an energy pack paid in NEAR (ordinary transactions: the relayer never attaches
+// deposits), the upgrade recorded in the next shift's setup and onchain at create_match.
+// If the faucet is rate-limited, set E2E_FUNDER=<an account in ~/.near-credentials> to fund a sub-account instead.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -22,24 +25,35 @@ function nep413Hash(message: string, nonce: Uint8Array, recipient: string): Uint
 
 const URL_ = process.env.E2E_URL ?? 'http://localhost:8787';
 const CONTRACT = process.env.CONTRACT_ID ?? 'sushi-sabotage.testnet';
-const id = `sushi-e2e-${Date.now().toString(36)}.testnet`;
 const step = (s: string): void => console.log(`\n▶ ${s}`);
 const ok = (s: string): void => console.log(`  ✓ ${s}`);
 
-step(`create ${id} from the testnet faucet`);
-execFileSync('near', ['account', 'create-account', 'sponsor-by-faucet-service', id, 'autogenerate-new-keypair', 'save-to-legacy-keychain', 'network-config', 'testnet', 'create'], { stdio: 'ignore' });
+const FUNDER = process.env.E2E_FUNDER;
+const id = FUNDER ? `e2e-${Date.now().toString(36)}.${FUNDER}` : `sushi-e2e-${Date.now().toString(36)}.testnet`;
+if (FUNDER) {
+  step(`create ${id}, funded with 3 NEAR by ${FUNDER}`);
+  execFileSync('near', ['account', 'create-account', 'fund-myself', id, '3 NEAR', 'autogenerate-new-keypair', 'save-to-legacy-keychain', 'sign-as', FUNDER, 'network-config', 'testnet', 'sign-with-legacy-keychain', 'send'], { stdio: 'ignore' });
+} else {
+  step(`create ${id} from the testnet faucet`);
+  execFileSync('near', ['account', 'create-account', 'sponsor-by-faucet-service', id, 'autogenerate-new-keypair', 'save-to-legacy-keychain', 'network-config', 'testnet', 'create'], { stdio: 'ignore' });
+}
 const key = JSON.parse(readFileSync(join(homedir(), '.near-credentials', 'testnet', `${id}.json`), 'utf8')).private_key as KeyPairString;
 const provider = new JsonRpcProvider({ url: 'https://rpc.testnet.near.org' });
 const me = new Account(id, provider, KeyPairSigner.fromSecretKey(key));
 await new Promise((r) => setTimeout(r, 3000));
 ok('account funded');
 
-async function call<T>(method: string, args: object, yocto = 0n): Promise<T> {
-  const out = (await me.signAndSendTransaction({ receiverId: CONTRACT, actions: [actions.functionCall(method, args as Record<string, unknown>, teraToGas(100), yocto)], waitUntil: 'EXECUTED_OPTIMISTIC', throwOnFailure: false })) as unknown as { status: { SuccessValue?: string; Failure?: unknown } };
+/** A direct transaction from the player's account (pays its own gas; can attach a deposit). */
+async function callTx<T>(method: string, args: object, yocto = 0n): Promise<{ value: T; tx: string }> {
+  const out = (await me.signAndSendTransaction({ receiverId: CONTRACT, actions: [actions.functionCall(method, args as Record<string, unknown>, teraToGas(100), yocto)], waitUntil: 'EXECUTED_OPTIMISTIC', throwOnFailure: false })) as unknown as { transaction: { hash: string }; status: { SuccessValue?: string; Failure?: unknown } };
   if (out.status.Failure) throw new Error(`${method}: ${JSON.stringify(out.status.Failure).slice(0, 300)}`);
   const raw = out.status.SuccessValue ? Buffer.from(out.status.SuccessValue, 'base64').toString() : '';
-  return (raw ? JSON.parse(raw) : undefined) as T;
+  return { value: (raw ? JSON.parse(raw) : undefined) as T, tx: out.transaction.hash };
 }
+const call = async <T>(method: string, args: object, yocto = 0n): Promise<T> => (await callTx<T>(method, args, yocto)).value;
+const MILLINEAR = 10n ** 21n;
+const txUrl = (h: string): string => `https://testnet.nearblocks.io/txns/${h}`;
+interface Econ { energy: number; gear: number[]; level: number; can_play: boolean }
 const view = async <T>(method: string, args: object): Promise<T> => (await provider.callFunction({ contractId: CONTRACT, method, args: args as Record<string, unknown>, blockQuery: { finality: 'optimistic' } })) as T;
 let cookie = '';
 const origin = new URL(URL_).origin;
@@ -81,6 +95,11 @@ ok(`relayed ${await relay('mint_chef', { name: 'E2E Chef' })}`);
 const profile = await api<{ chef: string; raw: { purse: number } }>('/me');
 const chef = profile.chef;
 ok(`minted ${chef} with ${profile.raw.purse} ryo`);
+ok(`energy ${(await api<{ econ: Econ }>('/me')).econ.energy} (full), no upgrades yet`);
+
+step('buy a knife upgrade with NEAR: an ordinary wallet transaction with a 0.05 NEAR deposit');
+const up = await callTx<number>('buy_upgrade', { chef, slot: 'knife' }, 50n * MILLINEAR);
+ok(`knife level ${up.value}: ${txUrl(up.tx)}`);
 
 step('claim the daily faucet and enable ranked play (gasless)');
 await relay('claim_daily', { chef });
@@ -97,14 +116,18 @@ ok(`bought Soy Slick for ${deal.outcome.price} ryo (gasless)`);
 ok(`NEP-245 mt_balance_of soy_slick = ${(await view<string>('mt_balance_of', { account_id: id, token_id: 'soy_slick' }))}`);
 
 step('play a ranked solo shift bringing the card');
-const start = await api<{ matchId: string; ranked: boolean; fee: number; setup: { chefs: { name: string; loadout: object }[] } }>('/solo/start', { name: 'E2E Chef', bots: 2, loadout: [0, 0, 0, 1, 0, 0] });
-ok(`match ${start.matchId}: ranked=${start.ranked}, fee ${start.fee}, loadout ${JSON.stringify(start.setup.chefs[0].loadout)}`);
+const start = await api<{ matchId: string; ranked: boolean; fee: number; setup: { seed: string; chefs: { name: string; loadout: object; gear?: object }[] } }>('/solo/start', { name: 'E2E Chef', bots: 2, loadout: [0, 0, 0, 1, 0, 0] });
+ok(`match ${start.matchId}: ranked=${start.ranked}, fee ${start.fee}, loadout ${JSON.stringify(start.setup.chefs[0].loadout)}, gear ${JSON.stringify(start.setup.chefs[0].gear ?? {})}, rules ${start.setup.seed.split('.')[0]}`);
+if (!start.setup.chefs[0].gear) throw new Error('the upgrade is not in the match setup');
 const done = await api<{ results: { name: string; final: number; rank: number }[] }>('/solo/finish', { matchId: start.matchId, log: [{ t: 300, c: 0, i: { card: 'soy_slick', target: 1 } }], accusations: [] });
 ok(`results: ${done.results.map((r) => `${r.name} ${r.final}`).join(', ')}`);
 let m: { settled: boolean; pot: number; payouts: number[]; royalties: number } | null = null;
 for (let k = 0; k < 30 && !m?.settled; k++) { await new Promise((r) => setTimeout(r, 2000)); m = await view('get_match', { match_id: start.matchId }); }
 if (!m?.settled) throw new Error('match did not settle');
 ok(`settled onchain: prizes ${m.payouts.join('/')} + scroll royalties ${m.royalties}`);
+ok(`gear recorded at create_match: ${JSON.stringify(await view('get_match_gear', { match_id: start.matchId }))}`);
+ok(`energy after one shift: ${(await api<{ econ: Econ }>('/me')).econ.energy}`);
+ok(`check it yourself: pnpm verify ${start.matchId} --host ${URL_}`);
 const board = await view<{ chef: string; best: number }[]>('leaderboard', { limit: 100 });
 ok(`on the season leaderboard: ${board.some((r) => r.chef === chef)}`);
 
@@ -113,6 +136,16 @@ const fixerOffer = await api<{ offer: { offerId: number } | null; outcome: { pri
 await relay('accept_offer', { offer_id: fixerOffer.offer!.offerId });
 await call('mt_transfer', { receiver_id: `kenji.${CONTRACT}`, token_id: 'dull_knife', amount: '1' }, 1n);
 ok(`kenji now holds ${(await view<string>('mt_balance_of', { account_id: `kenji.${CONTRACT}`, token_id: 'dull_knife' }))} dull_knife`);
+step('spend energy on two more shifts, then buy an energy pack with 0.1 NEAR (an ordinary transaction)');
+for (let k = 0; k < 2; k++) {
+  const s2 = await api<{ matchId: string }>('/solo/start', { name: 'E2E Chef', bots: 1, loadout: [] });
+  await api('/solo/finish', { matchId: s2.matchId, log: [], accusations: [] });
+}
+for (let k = 0; k < 20; k++) { if ((await api<{ econ: Econ }>('/me')).econ.energy <= 700) break; await new Promise((r) => setTimeout(r, 2000)); }
+ok(`energy before the pack: ${(await api<{ econ: Econ }>('/me')).econ.energy}`);
+const pack = await callTx<number>('buy_energy', { chef }, 100n * MILLINEAR);
+ok(`energy pack: now ${pack.value}: ${txUrl(pack.tx)}`);
+ok(`the contract treasury holds ${Number(BigInt((await view<{ treasury: string }>('get_economy', {})).treasury) / MILLINEAR) / 1000} NEAR from packs and upgrades`);
 const tok = await view<{ metadata: { title: string } }>('nft_token', { token_id: chef });
 ok(`chef NFT now reads: ${tok.metadata.title}`);
 console.log('\nall player steps passed');
