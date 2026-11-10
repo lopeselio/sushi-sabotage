@@ -118,12 +118,18 @@ fn an_energy_pack_costs_exactly_a_tenth_of_a_near_and_goes_to_the_treasury() {
     assert_eq!(k.buy_energy(a.clone()), 900);
     assert!(get_logs().iter().any(|l| l.contains("energy_bought") && l.contains("100000000000000000000000")));
     assert_eq!(k.get_economy().treasury, U128(ENERGY_PACK_PRICE.as_yoctonear()));
-    // no room for a second pack (900 + 300 > 1000)
+    // bought energy can pass the regen cap, but not stack while above it
+    assert_eq!(k.get_chef(a.clone()).unwrap().energy, 900);
+    at("alice.testnet", T0 + 3600 * SEC, ENERGY_PACK_PRICE);
+    assert_eq!(k.buy_energy(a.clone()), 1300);
+    at("x.testnet", T0 + 7200 * SEC, NearToken::from_yoctonear(0));
+    assert_eq!(k.get_chef(a.clone()).unwrap().energy, 1300); // no regen above full
     let full = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         at("alice.testnet", T0, ENERGY_PACK_PRICE);
         k.buy_energy(a.clone())
     }));
     assert!(full.is_err());
+    assert_eq!(k.get_economy().treasury, U128(2 * ENERGY_PACK_PRICE.as_yoctonear()));
 }
 
 #[test]
