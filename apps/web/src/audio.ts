@@ -1,12 +1,12 @@
 // Every sound is synthesised in WebAudio: no audio files.
 
 let ctx: AudioContext | null = null;
-let muted = false;
+let muted = ((): boolean => { try { return localStorage.getItem('sushi.muted') === '1'; } catch { return false; } })();
 const ac = (): AudioContext | null => {
   if (muted) return null;
   try { ctx ??= new AudioContext(); if (ctx.state === 'suspended') void ctx.resume(); return ctx; } catch { return null; }
 };
-export const setMuted = (m: boolean): void => { muted = m; };
+export const setMuted = (m: boolean): void => { muted = m; try { localStorage.setItem('sushi.muted', m ? '1' : '0'); } catch { /* */ } };
 export const isMuted = (): boolean => muted;
 
 function tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.15, slide = 0): void {
@@ -43,4 +43,9 @@ export const sfx = {
   order: (): void => tone(740, 0.08, 'sine', 0.06),
   tick: (): void => tone(1000, 0.04, 'square', 0.04),
   go: (): void => { tone(523, 0.12); setTimeout(() => tone(784, 0.3), 120); },
+  ui: (): void => tone(880, 0.04, 'triangle', 0.05),
+  /** a walkthrough step done */
+  step: (): void => { tone(784, 0.08, 'sine', 0.08); setTimeout(() => tone(1175, 0.16, 'sine', 0.08), 80); },
+  /** podium reveal */
+  fanfare: (): void => { [523, 659, 784, 1046].forEach((f, k) => setTimeout(() => tone(f, 0.22, 'triangle', 0.1), k * 110)); },
 };
