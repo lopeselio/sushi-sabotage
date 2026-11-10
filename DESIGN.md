@@ -91,6 +91,10 @@ Every sabotage is shown to its victim as an effect with no caster. In multiplaye
 
 **AI chefs' decisions are deterministic** (`packages/rules/bot.ts`). The model never picks a move or a target. It voices taunts and the Fixer's haggling only.
 
+**AI chef difficulty (rules v2).** Solo shifts and rooms are played at a level the player (or room host) picks: **Easy / Normal / Hard**, default Normal. Every AI chef in the match plays at it (`packages/rules/bot2.ts`). They share the v1 planner, so they always know what to cook. The level changes how they carry it out: thinking time between actions, chopping speed, walking pace and detours, how often they forget a pan until it burns or grab the wrong crate, how long a sabotage leaves them dazed, and how often, how early and at whom they sabotage (Hard chefs all go for the leader). It's tuned against a reference human (`packages/rules/src/refhuman.ts`: ~300 ms per action, the odd detour, a forgotten pan now and then, a card about twice a minute). Over three AI chefs that player wins about 60 % on Easy, 40 % on Normal and 20 % on Hard (`pnpm balance`). The v1 line-up (hard, normal, normal) beat that player in every shift.
+
+**Rules versions.** Bots decide inside the deterministic sim, so changing them would break the replay of settled matches. The match seed names the rules version and difficulty (`v2.normal.<hex>`; an untagged seed is v1), and its hash is committed at `create_match`, so neither can be swapped afterwards. The sim refuses a setup that disagrees with its seed, and `pnpm verify` checks it. Rules v1 (`bot.ts`) is frozen: a test replays matches recorded before v2, including a live settled league match, to the same state hash. The AI league stays on v1 with each chef at its persona level.
+
 ## NFTs
 
 - **Chef NFT** (NEP-171 + NEP-177 metadata, written by us, no template): one is minted free per player. Guests can claim one later. Each token holds:

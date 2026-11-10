@@ -21,7 +21,8 @@ pnpm start            # http://localhost:8787 (server + built web app)
 
 Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but nothing is written onchain.
 
-1. **Play a solo shift.** Open the page, type a chef name and press **Start shift**.
+1. **Play a solo shift.** Open the page, type a chef name, pick how many rivals and an **AI chefs: Easy / Normal / Hard** level (default Normal; your browser remembers it), and press **Start shift**.
+   - Easy chefs are slow, burn things and rarely sabotage; Normal ones are about as quick as an average player; Hard ones sabotage early and gang up on whoever leads. Against three of them an average player wins roughly 60 % / 40 % / 20 % of shifts (`pnpm balance`, below). The results screen says which level you played.
    - You see an AI chef's taunt. With a NEAR AI key set, it's "signed by a TEE model on NEAR AI".
    - Then a 3-second countdown, and your stall on a night-market street with three rival stalls.
    - **WASD** to move, **E** to pick up or put down, **F** to chop. Orders appear top-left.
@@ -51,13 +52,14 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
 
    ```
    ✓ seed matches the hash committed at create_match
+   ✓ rules version and difficulty match what the seed committed to  rules v2, AI chefs normal
    ✓ every opening hashes to its seal
    ✓ replaying the input log reaches the recorded end state
    ✓ final scores from the replay match the contract  [700, 249, 190]
    ```
 6. **Multiplayer.**
    - **Create room** gives you a 4-letter code. Open a second browser window, enter the code and press **Join**.
-   - The host can **Add AI chef**. Everyone presses **Ready**.
+   - The host can **Add AI chef** and pick the **AI chefs** level (Easy / Normal / Hard); the other players see it. Everyone presses **Ready**. A player who leaves mid-shift is taken over by an AI chef at that level.
    - The server runs the shift at 20 Hz. Neither window ever receives the caster of a sabotage: check `/ws` frames in devtools, where the caster is `-1`.
    - After the shift comes **Whodunit?**: for each hit, pick a suspect. Right is +40 to you and −40 to them; wrong is −10.
    - The contract scores the accusations itself in `settle_match`.
@@ -72,7 +74,7 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - The **price comes from `packages/rules/src/market.ts`**: demand raises it, it decays over an hour, and there's one counter-offer with an 80 % floor. The model only does the talking.
    - On accept, the Fixer agent posts an onchain offer, and your browser accepts it. The page shows the receipt, and the card lands in your chef NFT's inventory.
    - Cards are also **NEP-245 multi-tokens** (`mt_balance_of`, `mt_transfer`, `mt_batch_transfer`, `mt_transfer_call`, `mt_supply`): your balance is your chef's inventory, so players can trade cards. Buying mints one; bringing it into a match burns it.
-9. **The AI league.** Every 15 minutes three AI chefs play a full ranked shift against each other with nobody watching: entry fees into the pot, prizes and recipe-scroll royalties paid by the contract, the season leaderboard moving. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
+9. **The AI league.** Every 15 minutes three AI chefs play a full ranked shift against each other with nobody watching (on rules v1, each at its own persona level: Kenji hard, Mei and Hana normal, Tomo easy): entry fees into the pot, prizes and recipe-scroll royalties paid by the contract, the season leaderboard moving. The **Agents** page lists each league result with its settle transaction, and **Leaderboard** shows the standings.
 10. **The agents.** The **Agents** page lists each agent account and the receipts of what they did on their own (every 10 minutes):
    - claim the faucet;
    - buy their favourite card from the Fixer;
@@ -131,9 +133,10 @@ tools/blender     bpy scripts that build every 3D model (.glb) and its preview: 
 ## Tests
 
 ```bash
-pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market, hints
+pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market, hints, difficulty, frozen v1 replays
 pnpm contract:test                   # 20 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties, NEP-245
 pnpm sim 10                          # headless AI-only shifts: balance check
+pnpm balance 400                     # a reference human vs 3 AI chefs at v1 / easy / normal / hard: win rate, dishes, sabotages
 pnpm verify <matchId>                # re-run a finished match and check it against the contract
 pnpm --filter @sushi/server e2e      # the whole signed-in player flow on testnet with a fresh faucet account
 ```
