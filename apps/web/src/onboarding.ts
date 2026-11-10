@@ -111,7 +111,7 @@ export class Walkthrough implements ShiftWatcher {
   private skill: Skill | null = null;
   private ended = false;
 
-  constructor(private shift: Shift, root: HTMLElement, private onEnd: () => void) {
+  constructor(private shift: Shift, root: HTMLElement, private onEnd: () => void = () => {}) {
     shift.watcher = this;
     shift.coaching = true;
     root.querySelector('.hud-root')?.append(this.el);

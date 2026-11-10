@@ -172,7 +172,7 @@ async function solo(rivals: number, difficulty: Difficulty): Promise<void> {
       s.canPause = !r.ranked;
       s.openHelp = () => shiftHelp(s);
       shift = s;
-      if (coach) new Walkthrough(s, hud, () => { /* remembered by the walkthrough */ });
+      if (coach) new Walkthrough(s, hud); // remembers itself as done when it ends
     }, r.line);
   } catch (e) { toast((e as Error).message, 'bad'); }
 }
