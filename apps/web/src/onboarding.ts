@@ -250,7 +250,7 @@ export function howToPlay(opts: { inShift: boolean; replay: () => void; onClose?
     h('header', {}, h('h2', {}, 'How to play'), h('button', { class: 'x', 'aria-label': 'Close', onclick: () => close() }, '×')),
     h('div', { class: 'ht-cols' },
       sec('The shift',
-        h('p', {}, 'Three minutes. Every chef gets the same orders in the same order, in their own stall. Serve the dish on a ticket before its bar runs out. Points, Mischief and the scoreboard are on the right; your tickets on the left.')),
+        h('p', {}, 'Three minutes. Every chef gets the same orders in the same order, in their own stall. Serve the dish on a ticket before its bar runs out. Your tickets are top-left, the clock and scoreboard top-right, Mischief and your cards at the bottom.')),
       sec('Controls',
         h('dl', { class: 'keys' }, ...keys.flatMap(([k, v]) => [h('dt', {}, ...k.map((x) => (x === '–' ? '–' : kbd(x)))), h('dd', {}, v)])),
         h('p', { class: 'dim small' }, 'Touch screens: the stick moves, E picks up and puts down, Chop chops; tap a card or a rival.')),
