@@ -164,7 +164,6 @@ export abstract class Shift {
         case 'deliver': if (mine) { sfx.deliver(); this.floatOver(`+${e.points}`, 'good', `${RECIPES[e.recipe].name}${e.tip ? ` · tip ${e.tip}` : ''}`); } break;
         case 'wrong': if (mine) { sfx.wrong(); this.floatOver('Wrong dish −5', 'bad'); } break;
         case 'expire': if (mine) { sfx.wrong(); this.floatOver(`−15`, 'bad', `${RECIPES[e.recipe].name} went cold`); } break;
-        case 'trash': if (mine) this.floatOver('−5', 'bad', 'binned'); break;
         case 'order': if (mine) sfx.order(); break;
         case 'cast': if (e.caster === this.you) { sfx.cast(); this.ui.banner(`You played ${CARD_INFO[e.card].name}`, CARD_INFO[e.card].self ? CARD_INFO[e.card].blurb : `on ${this.names[e.target]}. They won’t know it was you.`, 'info'); } break;
         case 'sabotaged':
