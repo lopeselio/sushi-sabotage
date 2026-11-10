@@ -2,7 +2,7 @@
 // it re-runs the shift from the public input log and compares everything with what the contract holds.
 //
 //   pnpm verify <matchId> [--host https://…] [--rpc https://…] [--contract sushi-sabotage.testnet]
-import { replay, results, sealOf, sha256Hex, stateHash, type Accusation, type LogEntry, type Setup } from '@sushi/rules';
+import { replay, results, rulesOf, sealOf, sha256Hex, stateHash, type Accusation, type LogEntry, type Setup } from '@sushi/rules';
 
 const args = process.argv.slice(2);
 const opt = (k: string, d: string): string => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
@@ -46,6 +46,11 @@ if (!chain) process.exit(1);
 check(chain.settled, 'the contract settled it');
 check(!!bundle.seed && sha256Hex(bundle.seed) === chain.seed_hash, 'seed matches the hash committed at create_match', chain.seed_hash.slice(0, 16));
 check(bundle.setup.seed === bundle.seed, 'the sim setup uses that seed');
+// the seed names the rules version and AI difficulty ("v2.normal.<hex>"; untagged = v1), so they're committed too
+let rv: number | null = null;
+try { rv = rulesOf(bundle.setup); } catch (e) { check(false, 'rules version and difficulty match what the seed committed to', (e as Error).message); }
+if (rv !== null) check(true, 'rules version and difficulty match what the seed committed to', `rules v${rv}${bundle.setup.difficulty ? `, AI chefs ${bundle.setup.difficulty}` : ''}`);
+if (rv === null) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 check(JSON.stringify(bundle.seals) === JSON.stringify(chain.seals), `the ${chain.seals.length} seals in the bundle are the ones posted onchain`);
 const openOk = bundle.openings.every((o, k) => sealOf({ match: id, ...o }) === chain.seals[k]);
 check(openOk && bundle.openings.length === chain.seals.length, 'every opening hashes to its seal');
