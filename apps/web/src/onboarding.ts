@@ -212,7 +212,8 @@ export class Walkthrough implements ShiftWatcher {
     if (what === 'view' && ++this.views >= 2 && !this.shift.isOverview) this.set('view');
   }
 
-  end(): void {
+  /** Stop coaching. `remember` false: don't mark it done (How to play → Replay tutorial mid-shift). */
+  end(remember = true): void {
     if (this.ended) return;
     this.ended = true;
     clearTimeout(this.advancing);
@@ -220,7 +221,7 @@ export class Walkthrough implements ShiftWatcher {
     this.el.remove();
     if (this.shift.watcher === this) this.shift.watcher = null;
     this.shift.coaching = false;
-    markTutorialDone();
+    if (remember) markTutorialDone();
     this.onEnd();
   }
 }
