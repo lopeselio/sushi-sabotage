@@ -219,7 +219,13 @@ export class KitchenScene {
   build(names: string[], you: number): void {
     for (const p of this.pods) {
       this.scene.remove(p.group);
-      p.group.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.userData.merged) (o as THREE.Mesh).geometry.dispose(); });
+      // free what each pod made for itself: merged geometry and the canvas textures of its sign and label
+      p.group.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && o.userData.merged) m.geometry.dispose();
+        const mat = (o as unknown as { material?: THREE.Material & { map?: THREE.Texture | null } }).material;
+        if (mat && !Array.isArray(mat) && mat.map instanceof THREE.CanvasTexture && mat.map !== this.blobTex && mat.map !== this.floorTex) { mat.map.dispose(); mat.dispose(); }
+      });
     }
     this.pods = [];
     this.last = null;
