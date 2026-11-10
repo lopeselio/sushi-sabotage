@@ -1,7 +1,7 @@
 import './chef.css';
 import { CARD_INFO, CARDS, GEAR, GEAR_INFO, RANKED_GEAR_CAP, type GearSlot } from '@sushi/rules';
 import { api, explorerAccount, nearAmount, type ChefEcon, type Economy, type Me } from './api.ts';
-import { h, toast } from './ui.ts';
+import { h, openModal, toast } from './ui.ts';
 import { call, pay } from './wallet.ts';
 
 // The Chef NFT on screen: the free mint, the chef card (level, stats, energy, upgrades), NEAR
@@ -94,15 +94,30 @@ export function resultsCta(hooks: ChefHooks, recorded: boolean, noEnergy = false
   return recorded && me.econ ? h('div', { class: 'after-shift' }, energyBar(me.econ)) : null;
 }
 
-async function confirmPay(what: string, yocto: string, method: string, args: object, hooks: ChefHooks): Promise<void> {
-  const ok = window.confirm(`${what}\n\nYou pay ${nearAmount(yocto)} testnet NEAR from your wallet. This is an ordinary wallet transaction (the game's free gas relayer never carries payments), so your wallet will show the amount and a small gas fee.\n\nThe NEAR goes to the game contract's treasury.`);
-  if (!ok) return;
-  try {
-    const r = await pay(method, args, yocto);
-    toast(`${what}: done`, 'good');
-    if (r.tx) toast(`Tx ${r.tx.slice(0, 10)}… on testnet.nearblocks.io`, 'info');
-    await hooks.refresh();
-  } catch (e) { toast((e as Error).message, 'bad'); }
+/** A purchase: say plainly what the wallet will ask for, then send an ordinary transaction with the NEAR attached. */
+function confirmPay(what: string, yocto: string, method: string, args: object, hooks: ChefHooks): Promise<void> {
+  return new Promise((resolve) => {
+    let close = (): void => undefined;
+    const go = h('button', { class: 'big mint', onclick: async () => {
+      go.disabled = true; go.textContent = 'Approve it in your wallet…';
+      try {
+        const r = await pay(method, args, yocto);
+        close();
+        toast(`${what}: done${r.tx ? ` (tx ${r.tx.slice(0, 10)}…)` : ''}`, 'good');
+        await hooks.refresh();
+      } catch (e) { toast((e as Error).message, 'bad'); go.disabled = false; go.textContent = `Pay ${nearAmount(yocto)} NEAR`; }
+      resolve();
+    } }, `Pay ${nearAmount(yocto)} NEAR`);
+    const card = h('div', { class: 'pay-card' },
+      h('h2', {}, what),
+      h('p', { class: 'pay-amount' }, `${nearAmount(yocto)} `, h('small', {}, 'testnet NEAR')),
+      h('ul', { class: 'dim' },
+        h('li', {}, 'Your wallet opens an ordinary transaction with this amount attached, plus a tiny gas fee. Payments can’t use the game’s free gas relayer: it never carries NEAR.'),
+        h('li', {}, 'The NEAR goes to the game contract’s treasury, which pays for free chef mints and keeps the AI chefs and the relayer running.'),
+        h('li', {}, 'The contract checks the price, the level rules and that you own the chef.')),
+      h('div', { class: 'row' }, go, h('button', { class: 'ghost', onclick: () => { close(); resolve(); } }, 'Not now')));
+    close = openModal(card, { label: what, onClose: () => resolve() });
+  });
 }
 
 function upgradeTile(slot: GearSlot, k: number, e: ChefEcon, chef: string, hooks: ChefHooks): HTMLElement {
