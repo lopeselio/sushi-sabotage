@@ -31,10 +31,10 @@ const GEAR_ICON: Record<GearSlot, string> = { knife: '🔪', pan: '🍳', sandal
 const cleanName = (s: string): string => s.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 20) || 'Chef';
 
 function energyBar(e: ChefEcon, big = false): HTMLElement {
-  const pct = Math.round((100 * e.energy) / e.energy_max);
+  const pct = Math.min(100, Math.round((100 * e.energy) / e.energy_max));
   const low = e.energy < e.energy_per_shift;
   const shifts = Math.floor(e.energy / e.energy_per_shift);
-  const regen = e.energy >= e.energy_max ? 'full' : `+1 in ${e.next_energy_secs}s · 100 an hour`;
+  const regen = e.energy > e.energy_max ? `${e.energy - e.energy_max} bought energy above full` : e.energy === e.energy_max ? 'full' : `+1 in ${e.next_energy_secs}s · 100 an hour`;
   return h('div', { class: `energy${low ? ' low' : ''}${big ? ' big' : ''}`, title: `${e.energy}/${e.energy_max} energy. A recorded shift costs ${e.energy_per_shift}.` },
     h('div', { class: 'energy-head' }, h('span', {}, '⚡ Energy'), h('b', {}, `${e.energy}/${e.energy_max}`)),
     h('div', { class: 'energy-track' }, h('div', { class: 'energy-fill', style: `width:${pct}%` })),
@@ -144,7 +144,7 @@ export async function chefCard(hooks: ChefHooks): Promise<HTMLElement> {
     try { await fn(); toast(`${label}: done (gas paid by the game)`, 'good'); await hooks.refresh(); } catch (err) { toast((err as Error).message, 'bad'); b.disabled = false; }
   } }, label);
   const stat = (k: string, label: string): HTMLElement => h('div', { class: 'stat' }, h('b', {}, String(st[k] ?? 0)), h('small', {}, label));
-  const packFits = !!e && !!econ && e.energy + econ.energy_pack <= e.energy_max;
+  const packFits = !!e && e.energy <= e.energy_max;
 
   return h('div', { class: 'panel chefcard' },
     h('div', { class: 'cc-left' },
@@ -157,7 +157,7 @@ export async function chefCard(hooks: ChefHooks): Promise<HTMLElement> {
       h('div', { class: 'stats' }, stat('shifts', 'shifts'), stat('delivered', 'served'), stat('wins', 'wins'), stat('best', 'best'), stat('casts', 'sabotages'), stat('sleuth', 'caught a rival'), stat('caught', 'got caught'), stat('burns', 'burnt')),
       e ? energyBar(e, true) : null,
       e && econ ? h('div', { class: 'row pack' },
-        h('button', { disabled: !packFits, title: packFits ? '' : `A pack fits when energy is ${e.energy_max - econ.energy_pack} or less`, onclick: () => void confirmPay(`Energy pack (+${econ.energy_pack}) for ${c.name}`, econ.energy_pack_price, 'buy_energy', { chef: me.chef }, hooks) }, `⚡ +${econ.energy_pack} energy · ${nearAmount(econ.energy_pack_price)} NEAR`),
+        h('button', { disabled: !packFits, title: packFits ? 'Adds the whole pack, even past full' : 'Already above full: play a shift first', onclick: () => void confirmPay(`Energy pack (+${econ.energy_pack}) for ${c.name}`, econ.energy_pack_price, 'buy_energy', { chef: me.chef }, hooks) }, `⚡ +${econ.energy_pack} energy · ${nearAmount(econ.energy_pack_price)} NEAR`),
         h('small', { class: 'dim' }, `A recorded shift costs ${e.energy_per_shift}. Energy refills by itself; guests never need any.`)) : null,
       h('h3', {}, 'Upgrades'),
       h('p', { class: 'dim small' }, `Paid in testnet NEAR, one level at a time; higher levels need a higher-level chef. Ranked shifts count up to level ${RANKED_GEAR_CAP} of each, so nobody buys a win.`),
