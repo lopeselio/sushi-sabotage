@@ -168,11 +168,13 @@ So free play always comes back: about one recorded shift an hour without paying,
 
 ## Art direction: a night-market sushi stall
 
-- Four lantern-lit stall pods on a wet stone street at night, with steam, paper lanterns and noren curtains.
-- Chefs are chunky, toy-like figures with headbands, tinted per player at runtime.
+- Four lantern-lit stall pods on a wet cobbled street at night: a back wall with lit shoji, a noren, a signboard with the chef's name, paper lanterns, string lights, stools, crates and steam vents.
+- Chefs are chunky, toy-like figures with a face, a hachimaki headband and an apron; body, headband and cuffs are tinted per player at runtime.
 - Food is readable at a glance: colour-coded, oversized and toy-like.
 - **Every 3D asset is built by bpy scripts in `tools/blender/`**, run headless (`Blender -b -P`), exported to `.glb` and previewed to PNG for review. No paid or AI-generated asset packs. The scripts are in the repo, so `pnpm assets` rebuilds everything.
-- three.js (WebGL2), with soft shadows, lantern point lights, bloom on lanterns and stoves, and steam particles.
+- three.js (WebGL2): one shadowing moon light, a warm key, a hemisphere fill, one lamp per stall and a stove light; a small generated environment map for reflections on metal and the wet street. Static stall geometry is merged per material to keep draw calls low.
+- Bloom on lanterns, bulbs and flames, switched off on touch devices and dropped automatically if frames run long (`?fx=low` / `?fx=high` override). Pixel ratio capped at 1.75.
+- Pooled particles: steam, sizzle sparks, smoke when food burns, confetti and a score pop on delivery, a purple puff on a sabotage hit; the camera shakes a little when it happens to you.
 - Sound is synthesised in WebAudio: chop, sizzle, ding and a buzzer.
 
 ## Architecture
