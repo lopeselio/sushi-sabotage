@@ -66,7 +66,12 @@ async function soloStart(account: string | null, name: string, bots: number, loa
   ]);
   if (line) match.rec.lines.push(line);
   // in solo the browser runs the sim, so it gets the seed now; the hash was committed first
-  return { matchId: match.id, setup, difficulty, you: 0, ranked: planned.fee > 0, fee: planned.fee, seedHash: match.rec.seedHash, line: line ? { who: line.who, text: line.text, signed: !!line.signature } : null };
+  return {
+    matchId: match.id, setup, difficulty, you: 0, ranked: planned.fee > 0, fee: planned.fee, seedHash: match.rec.seedHash,
+    line: line ? { who: line.who, text: line.text, signed: !!line.signature } : null,
+    // a signed-in chef out of energy plays an unrecorded (guest) shift
+    noEnergy: !!planned.seats[0].noEnergy, recorded: !!planned.seats[0].chef,
+  };
 }
 
 async function soloFinish(matchId: string, log: LogEntry[], clientHash: string, mine: { sab: number; accused: number }[]) {
@@ -118,7 +123,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const chef = config.chainEnabled ? await view<string | null>('chef_of', { account_id: me }).catch(() => null) : null;
       const token = chef ? await view('nft_token', { token_id: chef }).catch(() => null) : null;
       const raw = chef ? await view('get_token', { token_id: chef }).catch(() => null) : null;
-      return json(res, 200, { accountId: me, chef, token, raw });
+      const econ = chef ? await view('get_chef', { chef }).catch(() => null) : null;
+      return json(res, 200, { accountId: me, chef, token, raw, econ });
+    }
+    if (p === '/api/economy') {
+      // energy and upgrade prices (yoctoNEAR) and the treasury, straight from the contract
+      return json(res, 200, config.chainEnabled ? await view('get_economy').catch(() => null) : null);
     }
     if (p === '/api/solo/start' && req.method === 'POST') {
       const b = await body<{ name?: string; bots?: number; loadout?: number[]; difficulty?: string }>(req);
