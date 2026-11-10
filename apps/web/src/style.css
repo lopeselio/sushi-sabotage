@@ -385,9 +385,13 @@ code { font-size: 12px; color: var(--dim); }
   .pips i { width: 11px; height: 11px; }
   .h-bl { bottom: calc(var(--hand-h) + 44px); min-width: 0; max-width: 60%; }
   .h-held { font-size: 12px; padding: 6px 9px; }
-  .coach { top: auto; bottom: calc(var(--hand-h) + 10px); left: var(--gut); right: var(--gut); width: auto; padding: 10px 12px; }
-  .coach p { font-size: 12.5px; }
-  .touch-ui .coach { top: 150px; bottom: auto; }
+  /* the coach shrinks to a strip under the tickets: title, the next step, the buttons */
+  .coach { left: var(--gut); right: 128px; width: auto; padding: 8px 10px; }
+  .coach h3 { font-size: 14px; margin: 4px 0 2px; }
+  .coach p { font-size: 12px; margin-bottom: 4px; line-height: 1.4; }
+  .coach.kitchen p:not(.c-live), .coach .c-check, .coach .c-wait { display: none; }
+  .coach .c-live { padding: 4px 8px; font-size: 12px; }
+  .c-row { margin-top: 4px; } .c-row button { padding: 4px 8px; font-size: 12px; }
   .touch { padding: 0 10px; }
   .stick { width: 100px; height: 100px; } .stick i { left: 28px; top: 28px; }
   .tbtn { width: 64px; height: 64px; }
@@ -411,3 +415,4 @@ code { font-size: 12px; color: var(--dim); }
   .h-cards { grid-template-columns: repeat(6, 96px); }
 }
 .mode.multi .big { margin-top: 4px; }
+.tbtns { display: flex; align-items: flex-end; }
