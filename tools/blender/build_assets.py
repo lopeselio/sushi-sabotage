@@ -204,7 +204,7 @@ def preview(name, dist=3.2, height=1.6, target=(0, 0, 0.5), res=(480, 480), lens
 WOOD = (0.36, 0.17, 0.09)       # lacquered cabinet
 WOOD_D = (0.17, 0.08, 0.05)
 WOOD_L = (0.93, 0.78, 0.55)     # hinoki
-STONE = (0.66, 0.63, 0.58)
+STONE = (0.42, 0.39, 0.36)
 STEEL = (0.72, 0.74, 0.78)
 IRON = (0.07, 0.07, 0.08)
 DARK = (0.03, 0.025, 0.035)
@@ -232,7 +232,7 @@ def M_brass():
 
 
 def M_glow():
-    return mat("Glow", (1, 0.55, 0.1), emit=6)
+    return mat("Glow", (1, 0.55, 0.1), emit=2.5)
 
 
 def counter_base():
@@ -519,7 +519,7 @@ def s_container():
 
 def lantern():
     reset()
-    paper = mat("Paper", (1.0, 0.3, 0.12), rough=0.9, emit=1.3)
+    paper = mat("Paper", (1.0, 0.22, 0.08), rough=0.9, emit=0.6)
     p = sphere("paper", 0.25, (0, 0, 0), paper, scale=(1, 1, 1.25), segs=24)
     for v in p.data.vertices:  # the bamboo ribs show as ridges
         k = 1 + 0.035 * max(0, math.cos(v.co.z * 70))
@@ -573,7 +573,7 @@ def d_backwall():
     """The back of the stall: posts, a low plank wall, glowing shoji panels and a shelf of jars. 9 wide."""
     dark = M_wood_d()
     wood = mat("Wood", WOOD, rough=0.45)
-    shoji = mat("Shoji", (1.0, 0.78, 0.5), rough=0.9, emit=0.9)
+    shoji = mat("Shoji", (1.0, 0.72, 0.42), rough=0.9, emit=0.3)
     parts = []
     for x in (-4.4, -1.5, 1.5, 4.4):
         parts.append(box(f"post{x}", (0.16, 0.16, 3.0), (x, 0.05, 1.5), dark, bevel=0.02))
