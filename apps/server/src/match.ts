@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { CARDS, RULES_VERSION, botAccuse, results, sealOf, sha256Hex, stateHash, taggedSeed, type Accusation, type BotSkill, type Card, type ChefSetup, type Result, type Setup, type State } from '@sushi/rules';
+import { CARDS, RANKED_GEAR_CAP, RULES_VERSION, botAccuse, gearFromArray, gearToArray, results, sealOf, sha256Hex, stateHash, taggedSeed, type Accusation, type BotSkill, type Card, type ChefSetup, type Result, type Setup, type State } from '@sushi/rules';
 import { CHEF_AGENTS, agentChef, agentLoadout, scoutedRival, type AgentDef } from './agents.ts';
 import { call, view } from './chain.ts';
 import { config } from './config.ts';
@@ -17,7 +17,13 @@ export interface SeatPlan {
   chef?: string | null; // chef token
   agent?: AgentDef;
   loadout?: number[]; // counts per card (CARDS order)
+  gear?: number[]; // the chef NFT's upgrade levels (knife, pan, sandals, apron), capped in ranked
+  /** a signed-in chef with too little energy: plays as a guest seat, nothing recorded */
+  noEnergy?: boolean;
 }
+
+/** A chef's energy and gear, from the contract (econ.rs). */
+export interface ChefEcon { chef: string; level: number; energy: number; energy_max: number; energy_per_shift: number; next_energy_secs: number; gear: number[]; can_play: boolean }
 
 interface ChefTokenView { owner_id: string; purse: number; kind: { Chef?: { inventory: number[]; approved_fee: number } } }
 
@@ -50,6 +56,12 @@ export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = 
     const p = { ...s };
     if (p.kind === 'bot' && p.agent) p.chef = await agentChef(p.agent);
     if (p.kind === 'human' && p.account && config.chainEnabled) p.chef = await view<string | null>('chef_of', { account_id: p.account }).catch(() => null);
+    if (p.kind === 'human' && p.chef) {
+      // a shift costs the chef energy (the contract takes it at create_match); without enough, it's a guest shift
+      const econ = await view<ChefEcon | null>('get_chef', { chef: p.chef }).catch(() => null);
+      if (econ && !econ.can_play) { p.chef = null; p.noEnergy = true; }
+      else if (econ?.gear.some((l) => l > 0)) p.gear = econ.gear;
+    }
     if (p.chef) {
       const t = await view<ChefTokenView | null>('get_token', { token_id: p.chef }).catch(() => null);
       const inv = t?.kind.Chef?.inventory ?? [];
@@ -64,7 +76,10 @@ export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = 
     }
     out.push(p);
   }
-  return { seats: out, fee: (anyHumanChef || opts.league) && allApproved && out.some((x) => x.chef) ? RANKED_FEE : 0 };
+  const fee = (anyHumanChef || opts.league) && allApproved && out.some((x) => x.chef) ? RANKED_FEE : 0;
+  // ranked shifts count each upgrade up to level 3 (the contract checks the same cap)
+  if (fee > 0) for (const p of out) if (p.gear) p.gear = p.gear.map((l) => Math.min(l, RANKED_GEAR_CAP));
+  return { seats: out, fee };
 }
 
 /**
@@ -77,6 +92,8 @@ export function setupFor(seed: string, seats: SeatPlan[], difficulty?: BotSkill)
     const loadout: Partial<Record<Card, number>> = {};
     (s.loadout ?? []).forEach((n, k) => { if (n > 0) loadout[CARDS[k]] = n; });
     const c: ChefSetup = { name: s.name, loadout };
+    // upgrades are a rules-v3 thing (solo and rooms); the league (v1) has none
+    if (difficulty && s.chef && s.gear?.some((l) => l > 0)) c.gear = gearFromArray(s.gear);
     if (s.kind === 'bot') {
       c.bot = difficulty ?? s.agent?.skill ?? 'normal';
       // a scouted rival who's in this match becomes the bot's preferred target
@@ -122,6 +139,8 @@ export class ChainMatch {
         seats: this.seats.map((s) => ({ chef: s.chef ?? null, name: s.name, loadout: s.chef ? (s.loadout?.length ? s.loadout : []) : [] })),
         fee: this.fee,
         ranked: this.fee > 0,
+        // each seat's gear, checked by the contract against the chef NFT and recorded for verify
+        gear: this.setup.chefs.some((c) => c.gear) ? this.setup.chefs.map((c) => gearToArray(c.gear)) : null,
       }, 100);
       this.rec.txs.push({ what: 'create_match', hash: r.tx });
       saveMatch(this.rec);
