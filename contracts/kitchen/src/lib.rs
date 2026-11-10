@@ -23,9 +23,12 @@ use near_sdk::{
     PublicKey,
 };
 
+mod econ;
 mod mt;
 #[cfg(test)]
 mod tests;
+
+pub use econ::*;
 
 pub const CARDS: [&str; 6] = ["wasabi_bomb", "fish_swap", "dull_knife", "soy_slick", "order_shuffle", "bamboo_shield"];
 pub const RECIPE_NAMES: [&str; 20] = [
@@ -69,6 +72,9 @@ enum Key {
     Matches,
     Board { season: u32 },
     Scrolls,
+    // added in the energy/upgrades upgrade (migrate): append only, the index is the storage prefix
+    ChefExtra,
+    MatchGear,
 }
 
 // ---------- data ----------
@@ -227,6 +233,16 @@ pub enum Event {
     AgentRegistered { account: AccountId, chef: String, day_cap: u64, match_cap: u64 },
     #[event_version("1.0.0")]
     PurseMoved { from: String, to: String, amount: u64 },
+    #[event_version("1.0.0")]
+    EnergyUsed { chef: String, match_id: String, energy: u32 },
+    #[event_version("1.0.0")]
+    EnergyBought { chef: String, by: AccountId, energy: u32, paid: near_sdk::json_types::U128 },
+    #[event_version("1.0.0")]
+    Upgraded { chef: String, slot: String, level: u8, by: AccountId, paid: near_sdk::json_types::U128 },
+    #[event_version("1.0.0")]
+    MatchGear { match_id: String, gear: Vec<Vec<u8>> },
+    #[event_version("1.0.0")]
+    TreasuryWithdrawn { to: AccountId, amount: near_sdk::json_types::U128 },
 }
 
 // NEP-171 events are emitted by hand in the standard's exact shape.
@@ -303,6 +319,33 @@ pub struct Kitchen {
     season: u32,
     board: IterableMap<String, i64>,
     scroll_of: LookupMap<u8, String>,
+    /// energy and gear per chef token (missing = full energy, no gear)
+    chef_extra: LookupMap<String, ChefExtra>,
+    /// the gear each seat played with, per match (only matches where someone had gear)
+    match_gear: LookupMap<String, Vec<Vec<u8>>>,
+    /// yoctoNEAR received for energy packs and upgrades, held by this account (econ.rs)
+    treasury: u128,
+}
+
+/// The state layout before energy and upgrades, exactly as it is stored on testnet. `migrate`
+/// reads it and writes the new layout; tokens, matches and every other entry keep their keys.
+#[near(serializers = [borsh])]
+pub struct KitchenV1 {
+    owner: AccountId,
+    referee: AccountId,
+    tokens: LookupMap<String, Token>,
+    token_ids: Vector<String>,
+    owned: LookupMap<AccountId, IterableSet<String>>,
+    chef_of: LookupMap<AccountId, String>,
+    minted: LookupMap<AccountId, bool>,
+    next_chef: u64,
+    agents: LookupMap<AccountId, Agent>,
+    offers: LookupMap<u64, Offer>,
+    next_offer: u64,
+    matches: LookupMap<String, Match>,
+    season: u32,
+    board: IterableMap<String, i64>,
+    scroll_of: LookupMap<u8, String>,
 }
 
 #[near]
@@ -325,6 +368,40 @@ impl Kitchen {
             season: 1,
             board: IterableMap::new(Key::Board { season: 1 }),
             scroll_of: LookupMap::new(Key::Scrolls),
+            chef_extra: LookupMap::new(Key::ChefExtra),
+            match_gear: LookupMap::new(Key::MatchGear),
+            treasury: 0,
+        }
+    }
+
+    /// One-time upgrade from the v1 layout (deploy with `with-init-call migrate`). Only the root
+    /// state struct changes: three fields are added, every collection keeps its prefix, and chefs
+    /// without an energy entry read as full energy and no gear. Running it again fails, because the
+    /// stored state no longer parses as v1.
+    #[init(ignore_state)]
+    #[private]
+    pub fn migrate() -> Self {
+        let raw = env::storage_read(b"STATE").unwrap_or_else(|| env::panic_str("no state to migrate"));
+        let old: KitchenV1 = near_sdk::borsh::from_slice(&raw).unwrap_or_else(|_| env::panic_str("state is not the v1 layout (already migrated?)"));
+        Self {
+            owner: old.owner,
+            referee: old.referee,
+            tokens: old.tokens,
+            token_ids: old.token_ids,
+            owned: old.owned,
+            chef_of: old.chef_of,
+            minted: old.minted,
+            next_chef: old.next_chef,
+            agents: old.agents,
+            offers: old.offers,
+            next_offer: old.next_offer,
+            matches: old.matches,
+            season: old.season,
+            board: old.board,
+            scroll_of: old.scroll_of,
+            chef_extra: LookupMap::new(Key::ChefExtra),
+            match_gear: LookupMap::new(Key::MatchGear),
+            treasury: 0,
         }
     }
 
@@ -517,9 +594,10 @@ impl Kitchen {
 
     // ---------- matches ----------
 
-    /// Opens a match: takes each token seat's entry fee (within its approval and agent caps)
-    /// and its card loadout (from inventory).
-    pub fn create_match(&mut self, match_id: String, seed_hash: String, seats: Vec<Seat>, fee: u64, ranked: bool) {
+    /// Opens a match: takes each token seat's entry fee (within its approval and agent caps),
+    /// its card loadout (from inventory) and a shift's energy, and records each seat's gear
+    /// (`gear`: per seat, one level per slot, checked against the chef; omit for none).
+    pub fn create_match(&mut self, match_id: String, seed_hash: String, seats: Vec<Seat>, fee: u64, ranked: bool, gear: Option<Vec<Vec<u8>>>) {
         self.only_referee();
         require!(!match_id.is_empty() && match_id.len() <= 64 && !match_id.contains('|'), "bad match id");
         require!(self.matches.get(&match_id).is_none(), "match exists");
@@ -559,6 +637,7 @@ impl Kitchen {
                 }
             }
         }
+        self.start_shift_econ(&match_id, &seats, gear, ranked);
         let created = env::block_timestamp();
         Event::MatchCreated {
             match_id: match_id.clone(),
@@ -1000,14 +1079,17 @@ impl Kitchen {
             Kind::Chef { name, stats, inventory, .. } => {
                 let level = level_of(stats.xp);
                 let title = title_of(level);
+                let x = self.extra_of(id, env::block_timestamp());
                 let extra = json!({
                     "kind": "chef", "purse": t.purse, "level": level, "title": title, "stats": stats,
+                    "energy": x.energy, "energy_max": ENERGY_MAX,
+                    "gear": GEAR.iter().zip(x.gear.iter()).map(|(g, l)| (g.to_string(), json!(l))).collect::<serde_json::Map<_, _>>(),
                     "inventory": CARDS.iter().zip(inventory.iter()).map(|(c, n)| (c.to_string(), json!(n))).collect::<serde_json::Map<_, _>>(),
                 });
                 TokenMetadata {
                     title: Some(format!("{name} · {title} · Lv {level}")),
                     description: Some(format!("A Sushi Sabotage chef. Purse {} ryo, {} dishes served, best shift {}.", t.purse, stats.delivered, stats.best)),
-                    media: Some(chef_svg(name, title, level, t.purse, stats)),
+                    media: Some(chef_svg(name, title, level, t.purse, stats, &x)),
                     copies: Some(U64(1)),
                     extra: Some(extra.to_string()),
                 }
@@ -1043,7 +1125,7 @@ fn data_uri(svg: String) -> String {
     out
 }
 
-fn chef_svg(name: &str, title: &str, level: u32, purse: u64, s: &ChefStats) -> String {
+fn chef_svg(name: &str, title: &str, level: u32, purse: u64, s: &ChefStats, x: &ChefExtra) -> String {
     data_uri(format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 400\"><rect width=\"320\" height=\"400\" rx=\"24\" fill=\"#1b1420\"/>\
 <circle cx=\"160\" cy=\"150\" r=\"70\" fill=\"#f4d6b8\"/><rect x=\"92\" y=\"78\" width=\"136\" height=\"26\" rx=\"8\" fill=\"#e2433b\"/>\
@@ -1052,8 +1134,11 @@ fn chef_svg(name: &str, title: &str, level: u32, purse: u64, s: &ChefStats) -> S
 <text x=\"160\" y=\"260\" font-family=\"sans-serif\" font-size=\"26\" fill=\"#fff3e0\" text-anchor=\"middle\">{name}</text>\
 <text x=\"160\" y=\"290\" font-family=\"sans-serif\" font-size=\"16\" fill=\"#ffb547\" text-anchor=\"middle\">{title} - Lv {level}</text>\
 <text x=\"160\" y=\"330\" font-family=\"sans-serif\" font-size=\"14\" fill=\"#cdbfd6\" text-anchor=\"middle\">{purse} ryo - {} served - best {}</text>\
-<text x=\"160\" y=\"355\" font-family=\"sans-serif\" font-size=\"14\" fill=\"#cdbfd6\" text-anchor=\"middle\">{} sabotages - caught {} - sleuth {}</text></svg>",
-        s.delivered, s.best, s.casts, s.caught, s.sleuth
+<text x=\"160\" y=\"355\" font-family=\"sans-serif\" font-size=\"14\" fill=\"#cdbfd6\" text-anchor=\"middle\">{} sabotages - caught {} - sleuth {}</text>\
+<rect x=\"60\" y=\"368\" width=\"200\" height=\"8\" rx=\"4\" fill=\"#3a2c40\"/><rect x=\"60\" y=\"368\" width=\"{}\" height=\"8\" rx=\"4\" fill=\"#7ee08a\"/>\
+<text x=\"160\" y=\"392\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#cdbfd6\" text-anchor=\"middle\">energy {} - knife {} pan {} sandals {} apron {}</text></svg>",
+        s.delivered, s.best, s.casts, s.caught, s.sleuth,
+        x.energy as u64 * 200 / ENERGY_MAX as u64, x.energy, x.gear[0], x.gear[1], x.gear[2], x.gear[3]
     ))
 }
 

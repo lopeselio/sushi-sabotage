@@ -131,7 +131,7 @@ fn agent_match_cap() {
     ctx("kenji.kitchen.testnet");
     k.approve_referee(kenji.clone(), 50);
     ctx("ref.testnet");
-    k.create_match("m1".into(), sha("seed"), vec![seat(&kenji)], 20, true);
+    k.create_match("m1".into(), sha("seed"), vec![seat(&kenji)], 20, true, None);
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn fee_needs_owner_approval() {
     let mut k = setup();
     let a = chef(&mut k, "alice.testnet", "Alice");
     ctx("ref.testnet");
-    k.create_match("m1".into(), sha("seed"), vec![seat(&a)], 10, true);
+    k.create_match("m1".into(), sha("seed"), vec![seat(&a)], 10, true, None);
 }
 
 fn two_chef_match(k: &mut Kitchen) -> (String, String) {
@@ -151,7 +151,7 @@ fn two_chef_match(k: &mut Kitchen) -> (String, String) {
         k.approve_referee(c.clone(), 10);
     }
     ctx("ref.testnet");
-    k.create_match("m1".into(), sha("seed"), vec![seat(&a), seat(&b)], 10, true);
+    k.create_match("m1".into(), sha("seed"), vec![seat(&a), seat(&b)], 10, true, None);
     (a, b)
 }
 
@@ -241,7 +241,7 @@ fn loadout_comes_out_of_inventory() {
     ctx("alice.testnet");
     k.accept_offer(id);
     ctx("ref.testnet");
-    k.create_match("m2".into(), sha("s"), vec![Seat { chef: Some(a.clone()), name: "Alice".into(), loadout: vec![0, 1, 0, 0, 0, 0] }], 0, false);
+    k.create_match("m2".into(), sha("s"), vec![Seat { chef: Some(a.clone()), name: "Alice".into(), loadout: vec![0, 1, 0, 0, 0, 0] }], 0, false, None);
     let Kind::Chef { inventory, .. } = k.get_token(a).unwrap().kind else { panic!() };
     assert_eq!(inventory[1], 0);
 }
@@ -296,7 +296,7 @@ fn cards_are_nep245_tokens() {
     assert_eq!(k.mt_batch_balance_of(acc("bob.testnet"), vec!["soy_slick".into(), "fish_swap".into()]).iter().map(|x| x.0).collect::<Vec<_>>(), vec![1, 0]);
     // using a card in a match burns it
     ctx("ref.testnet");
-    k.create_match("m3".into(), sha("s"), vec![Seat { chef: Some(a.clone()), name: "Alice".into(), loadout: vec![0, 0, 0, 1, 0, 0] }], 0, false);
+    k.create_match("m3".into(), sha("s"), vec![Seat { chef: Some(a.clone()), name: "Alice".into(), loadout: vec![0, 0, 0, 1, 0, 0] }], 0, false, None);
     assert_eq!(k.mt_supply("soy_slick".into()).unwrap().0, 1);
     assert!(get_logs().iter().any(|l| l.contains("mt_burn")));
 }
