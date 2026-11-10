@@ -2,12 +2,12 @@
 // it re-runs the shift from the public input log and compares everything with what the contract holds.
 //
 //   pnpm verify <matchId> [--host https://…] [--rpc https://…] [--contract sushi-sabotage.testnet]
-import { replay, results, rulesOf, sealOf, sha256Hex, stateHash, type Accusation, type LogEntry, type Setup } from '@sushi/rules';
+import { gearToArray, replay, results, rulesOf, sealOf, sha256Hex, stateHash, type Accusation, type LogEntry, type Setup } from '@sushi/rules';
 
 const args = process.argv.slice(2);
 const opt = (k: string, d: string): string => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const id = args.find((a) => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
-const HOST = opt('host', 'https://sushi-sabotage.happyflower-1d86c59e.northeurope.azurecontainerapps.io');
+const HOST = opt('host', 'https://sushi.lopeselio.online');
 const RPC = opt('rpc', 'https://rpc.testnet.near.org');
 const CONTRACT = opt('contract', 'sushi-sabotage.testnet');
 if (!id) { console.error('usage: pnpm verify <matchId> [--host URL] [--rpc URL] [--contract ID]'); process.exit(2); }
@@ -51,6 +51,14 @@ let rv: number | null = null;
 try { rv = rulesOf(bundle.setup); } catch (e) { check(false, 'rules version and difficulty match what the seed committed to', (e as Error).message); }
 if (rv !== null) check(true, 'rules version and difficulty match what the seed committed to', `rules v${rv}${bundle.setup.difficulty ? `, AI chefs ${bundle.setup.difficulty}` : ''}`);
 if (rv === null) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
+if (rv >= 3) {
+  // rules v3: each chef's upgrades, as the contract checked them against the NFT and recorded them
+  const recorded = await view<number[][] | null>('get_match_gear', { match_id: id }).catch(() => null);
+  const played = bundle.setup.chefs.map((c) => gearToArray(c.gear));
+  const none = played.every((g) => g.every((l) => l === 0));
+  const same = recorded ? JSON.stringify(recorded) === JSON.stringify(played) : none;
+  check(same, 'chef upgrades in the setup are the ones the contract recorded at create_match', none ? 'none' : played.map((g) => `[${g.join(',')}]`).join(' '));
+}
 check(JSON.stringify(bundle.seals) === JSON.stringify(chain.seals), `the ${chain.seals.length} seals in the bundle are the ones posted onchain`);
 const openOk = bundle.openings.every((o, k) => sealOf({ match: id, ...o }) === chain.seals[k]);
 check(openOk && bundle.openings.length === chain.seals.length, 'every opening hashes to its seal');
