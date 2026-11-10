@@ -1,0 +1,61 @@
+/* Chef NFT card, mint call to action, energy and upgrades (chef.ts). Uses the page's own colours when set. */
+.chefcard { display: grid; grid-template-columns: minmax(200px, 300px) 1fr; gap: 24px; max-width: 980px; }
+.chefcard .nft img { width: 100%; border-radius: 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 200, 120, .18); }
+.chefcard .cc-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.chefcard .cc-title h2 { margin: 0; }
+.chefcard .badge { background: linear-gradient(90deg, #ffb547, #e2433b); color: #1b1420; font-weight: 800; padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+.chefcard h3 { margin: 18px 0 6px; }
+.chefcard .small, .mint-cta .small { font-size: 12px; }
+.xp { position: relative; height: 18px; border-radius: 9px; background: rgba(255, 255, 255, .08); margin: 10px 0; overflow: hidden; }
+.xp-fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ffb547, #ffd27a); }
+.xp small { position: relative; display: block; text-align: center; font-size: 11px; line-height: 18px; color: #1b1420; font-weight: 700; mix-blend-mode: normal; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.stat { background: rgba(255, 255, 255, .06); border-radius: 12px; padding: 8px; text-align: center; }
+.stat b { display: block; font-size: 20px; }
+.stat small { opacity: .75; font-size: 11px; }
+.energy { margin: 8px 0; }
+.energy-head { display: flex; justify-content: space-between; font-size: 13px; }
+.energy-track { height: 10px; border-radius: 6px; background: rgba(255, 255, 255, .08); overflow: hidden; margin: 4px 0; }
+.energy-fill { height: 100%; background: linear-gradient(90deg, #4cc38a, #9be36d); box-shadow: 0 0 12px rgba(155, 227, 109, .6); transition: width .5s; }
+.energy.low .energy-fill { background: linear-gradient(90deg, #e2433b, #ff8a5b); }
+.energy.big .energy-track { height: 14px; }
+.energy small { font-size: 11px; }
+.pack { align-items: center; gap: 12px; flex-wrap: wrap; }
+.gears { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.gear { background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .08); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.gear.owned { border-color: rgba(255, 181, 71, .45); }
+.gear-head { display: flex; align-items: center; gap: 8px; }
+.gear-icon { font-size: 20px; }
+.pips { margin-left: auto; display: flex; gap: 3px; }
+.pips i { width: 10px; height: 10px; border-radius: 3px; background: rgba(255, 255, 255, .14); }
+.pips i.over { outline: 1px dashed rgba(255, 255, 255, .25); background: transparent; }
+.pips i.on { background: #ffb547; box-shadow: 0 0 6px rgba(255, 181, 71, .8); }
+.gear .buy { margin-top: 4px; }
+.gear .maxed { margin-top: 4px; color: #ffb547; font-weight: 700; font-size: 13px; }
+.cards-owned { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.cardchip { background: rgba(142, 91, 216, .25); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+.cardchip.none { opacity: .45; }
+.mint-cta { display: flex; gap: 16px; align-items: center; background: linear-gradient(135deg, rgba(226, 67, 59, .22), rgba(255, 181, 71, .14)); border: 1px solid rgba(255, 181, 71, .35); border-radius: 18px; padding: 16px 18px; margin: 12px 0; text-align: left; }
+.mint-cta h3 { margin: 0 0 4px; }
+.mint-cta p { margin: 0 0 10px; }
+.mint-cta .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.mint-cta input { max-width: 200px; }
+.mint-art { font-size: 48px; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .4)); }
+.mint-cta.compact .mint-art { font-size: 36px; }
+.mint-cta.compact p { font-size: 13px; }
+button.mint { background: linear-gradient(90deg, #ffb547, #e2433b); color: #1b1420; font-weight: 800; box-shadow: 0 6px 24px rgba(226, 67, 59, .45); }
+.chef-chip { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .1); border-radius: 16px; padding: 10px 14px; margin: 10px 0; cursor: pointer; color: inherit; }
+.chef-chip:hover { border-color: rgba(255, 181, 71, .5); }
+.chip-face { font-size: 30px; }
+.chip-main { display: flex; flex-direction: column; min-width: 110px; }
+.chef-chip .energy { flex: 1; margin: 0; }
+.after-shift { margin: 10px 0; }
+@media (max-width: 720px) {
+  .chefcard { grid-template-columns: 1fr; }
+  .chefcard .cc-left { max-width: 280px; margin: 0 auto; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .gears { grid-template-columns: 1fr; }
+  .mint-cta { flex-direction: column; text-align: center; }
+  .mint-cta .row { justify-content: center; }
+  .chef-chip { flex-wrap: wrap; }
+}
