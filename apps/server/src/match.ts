@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { CARDS, RANKED_GEAR_CAP, RULES_VERSION, botAccuse, gearFromArray, gearToArray, results, sealOf, sha256Hex, stateHash, taggedSeed, type Accusation, type BotSkill, type Card, type ChefSetup, type Result, type Setup, type State } from '@sushi/rules';
 import { CHEF_AGENTS, agentChef, agentLoadout, scoutedRival, type AgentDef } from './agents.ts';
 import { call, view } from './chain.ts';
+import { budgetOf } from './budget.ts';
 import { config } from './config.ts';
 import { saveMatch, type MatchRecord, type OpeningRec } from './store.ts';
 
@@ -31,15 +32,19 @@ const newId = (): string => `m-${Date.now().toString(36)}-${randomBytes(3).toStr
 
 interface AgentView { chef: string; day_cap: number; match_cap: number; day: number; spent_today: number }
 
-/** Whether an agent's contract policy still allows `fee` today (the contract would refuse otherwise). */
-async function agentCanPay(a: AgentDef, fee: number): Promise<boolean> {
+/**
+ * Whether an agent can pay `fee` today. Against people it may use its whole remaining allowance
+ * (including the player reserve); in the league it may only use the league budget (budget.ts).
+ */
+async function agentCanPay(a: AgentDef, fee: number, league = false): Promise<boolean> {
   const acct = `${a.label}.${config.contract}`;
   const p = await view<AgentView | null>('get_agent', { account_id: acct }).catch(() => null);
   if (!p) return false;
   // the contract counts days in nanoseconds since epoch / 1 day
   const today = Math.floor(Date.now() / 86_400_000);
   const spent = p.day === today ? p.spent_today : 0;
-  return fee <= p.match_cap && spent + fee <= p.day_cap;
+  if (fee > p.match_cap) return false;
+  return league ? budgetOf(p, Date.now(), fee).leagueEntries >= 1 : spent + fee <= p.day_cap;
 }
 
 /**
@@ -48,7 +53,7 @@ async function agentCanPay(a: AgentDef, fee: number): Promise<boolean> {
  * enough in the purse, and, for AI chefs, inside today's spending cap. League matches can be
  * ranked with no human in them.
  */
-export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = {}): Promise<{ seats: SeatPlan[]; fee: number }> {
+export async function planSeats(seats: SeatPlan[], opts: { league?: boolean; friendly?: boolean } = {}): Promise<{ seats: SeatPlan[]; fee: number }> {
   const out: SeatPlan[] = [];
   let allApproved = true;
   let anyHumanChef = false;
@@ -67,7 +72,7 @@ export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = 
       const inv = t?.kind.Chef?.inventory ?? [];
       p.loadout = p.kind === 'bot' && p.agent ? await agentLoadout(p.agent) : CARDS.map((_, k) => Math.min(p.loadout?.[k] ?? 0, inv[k] ?? 0, 3));
       if ((t?.kind.Chef?.approved_fee ?? 0) < RANKED_FEE || (t?.purse ?? 0) < RANKED_FEE) allApproved = false;
-      if (p.kind === 'bot' && p.agent && !(await agentCanPay(p.agent, RANKED_FEE))) allApproved = false;
+      if (p.kind === 'bot' && p.agent && !(await agentCanPay(p.agent, RANKED_FEE, !!opts.league))) allApproved = false;
       if (p.kind === 'human') anyHumanChef = true;
     } else {
       p.chef = null;
@@ -76,7 +81,7 @@ export async function planSeats(seats: SeatPlan[], opts: { league?: boolean } = 
     }
     out.push(p);
   }
-  const fee = (anyHumanChef || opts.league) && allApproved && out.some((x) => x.chef) ? RANKED_FEE : 0;
+  const fee = !opts.friendly && (anyHumanChef || opts.league) && allApproved && out.some((x) => x.chef) ? RANKED_FEE : 0;
   // ranked shifts count each upgrade up to level 3 (the contract checks the same cap)
   if (fee > 0) for (const p of out) if (p.gear) p.gear = p.gear.map((l) => Math.min(l, RANKED_GEAR_CAP));
   return { seats: out, fee };
