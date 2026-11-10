@@ -3,7 +3,8 @@
 //! - **Energy** lives on the Chef NFT (it moves with the token). A shift a signed-in chef plays costs
 //!   `ENERGY_PER_SHIFT`, taken by `create_match`. It regenerates by itself at one point every
 //!   `ENERGY_REGEN_NS` (100 an hour) up to `ENERGY_MAX`, from block timestamps, so free play always
-//!   comes back. `buy_energy` adds `ENERGY_PACK` for exactly `ENERGY_PACK_PRICE`. Agents' chefs
+//!   comes back. `buy_energy` adds `ENERGY_PACK` for exactly `ENERGY_PACK_PRICE`, whenever the chef
+//!   is at or below full; bought energy can go past `ENERGY_MAX` (regen stops there). Agents' chefs
 //!   (the AI league) don't use energy: their contract spending caps already limit them.
 //! - **Upgrades**: four slots (knife, pan, sandals, apron), levels 1-5, each level priced in NEAR
 //!   (`GEAR_PRICE_MILLINEAR`) and gated on the chef's own level (`GEAR_CHEF_LEVEL`), so they can't
@@ -116,8 +117,8 @@ pub fn gear_price(level: u8) -> NearToken {
 
 #[near]
 impl Kitchen {
-    /// Buys one energy pack for a chef you own: attach exactly 0.1 NEAR. The chef's energy must
-    /// have room for the whole pack (at most 700 now), so nothing you pay for is lost.
+    /// Buys one energy pack for a chef you own: attach exactly 0.1 NEAR. Allowed whenever the chef
+    /// is at or below full (1000); the whole pack is added, so it can take a full chef to 1300.
     #[payable]
     pub fn buy_energy(&mut self, chef: String) -> u32 {
         let paid = env::attached_deposit();
@@ -125,7 +126,7 @@ impl Kitchen {
         self.owned_chef(&chef);
         let now = env::block_timestamp();
         let mut x = self.extra_of(&chef, now);
-        require!(x.energy + ENERGY_PACK <= ENERGY_MAX, "not enough room: a pack fits when energy is 700 or less");
+        require!(x.energy <= ENERGY_MAX, "energy is already above full: play a shift first");
         x.energy += ENERGY_PACK;
         let energy = x.energy;
         self.chef_extra.insert(chef.clone(), x);
