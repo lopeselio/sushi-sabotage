@@ -43,7 +43,7 @@ export function welcome(play: () => void): void {
         h('button', { class: 'link', onclick: () => finish(false) }, last ? 'Look around first' : 'Skip'),
         h('span', { class: 'grow' }),
         i > 0 ? h('button', { class: 'ghost', onclick: () => { i--; render(); } }, 'Back') : null,
-        h('button', { class: last ? 'big' : 'primary', 'data-autofocus': '', onclick: () => { if (last) finish(true); else { i++; render(); } } }, last ? 'Play my first shift' : 'Next')),
+        h('button', { class: last ? 'big' : 'primary', 'data-autofocus': '', onclick: () => { if (last) finish(true); else { i++; render(); } } }, last ? (tutorialDone() ? 'Play a shift' : 'Play my first shift') : 'Next')),
     );
     card.querySelector<HTMLElement>('[data-autofocus]')?.focus();
   };
