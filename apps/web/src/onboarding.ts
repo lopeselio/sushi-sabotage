@@ -128,6 +128,7 @@ export class Walkthrough implements ShiftWatcher {
     const sk = st.kitchen && this.skill ? SKILLS[this.skill] : null;
     const live = st.kitchen && this.shift.hintText ? h('p', { class: 'c-live' }, `Next: ${this.shift.hintText}`) : '';
     this.el.classList.remove('done');
+    this.el.classList.toggle('kitchen', !!st.kitchen);
     this.el.replaceChildren(
       h('div', { class: 'c-top' }, h('span', { class: 'c-step' }, `First shift · ${this.i + 1}/${STAGES.length}`), this.btn('Skip tutorial', () => this.end(), 'link')),
       h('div', { class: 'c-bar' }, h('i', { style: `width:${(this.i / (STAGES.length - 1)) * 100}%` })),
@@ -192,6 +193,10 @@ export class Walkthrough implements ShiftWatcher {
     if (Math.hypot(me.x - SPAWN.x, me.z - SPAWN.z) > 1.2) this.set('move');
     if ((me.held?.k === 'plate' && (me.held.on?.length ?? 0) >= 2) || me.st.some((x) => x.item?.k === 'plate' && (x.item.on?.length ?? 0) >= 2)) this.set('build');
     if (s.over) { this.end(); return; }
+    // sit just under the order tickets, however many rows they take
+    const rail = document.querySelector('[data-tour="orders"]')?.getBoundingClientRect();
+    const top = `${Math.round(Math.max(rail?.bottom ?? 0, 60) + 14)}px`;
+    if (this.el.style.top !== top) this.el.style.top = top;
     if (!STAGES[this.i].kitchen || this.advancing) return;
     // follow the planner: teach the skill the next step needs; once learnt, just show the next step
     const hint = this.shift.nextHint;
