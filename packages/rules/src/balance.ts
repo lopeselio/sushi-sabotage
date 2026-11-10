@@ -1,4 +1,4 @@
-import { botAccuse, createState, results, step, taggedSeed, type Accusation, type Input, type Setup } from './sim.ts';
+import { RULES_VERSION, botAccuse, createState, results, step, taggedSeed, type Accusation, type Input, type Setup } from './sim.ts';
 import type { BotSkill } from './bot.ts';
 import { newRefHuman, refHumanInput } from './refhuman.ts';
 import type { Profile } from './bot2.ts';
@@ -10,10 +10,10 @@ export interface BalanceSummary { shifts: number; winRate: number; avgRank: numb
 
 const NAMES = ['Kenji', 'Mei', 'Hana'];
 
-/** Shift n of a balance run: the reference human vs three AI chefs at `level` (rules v2), or `v1` (the pre-v2 solo line-up: hard, normal, normal). */
+/** Shift n of a balance run: the reference human vs three AI chefs at `level` (current rules), or `v1` (the pre-v2 solo line-up: hard, normal, normal). */
 export const balanceSetup = (level: BotSkill | 'v1', n: number): Setup => level === 'v1'
   ? { seed: `bal-${n}`, chefs: [{ name: 'You' }, ...(['hard', 'normal', 'normal'] as BotSkill[]).map((b, k) => ({ name: NAMES[k], bot: b }))] }
-  : { seed: taggedSeed(`bal${n}`, level), rulesVersion: 2, difficulty: level, chefs: [{ name: 'You' }, ...NAMES.map((name) => ({ name, bot: level }))] };
+  : { seed: taggedSeed(`bal${n}`, level), rulesVersion: RULES_VERSION, difficulty: level, chefs: [{ name: 'You' }, ...NAMES.map((name) => ({ name, bot: level }))] };
 
 /** One shift: `setup.chefs[0]` must be a human seat; the reference human plays it. */
 export function humanShift(setup: Setup, opts?: Profile): BalanceRow {

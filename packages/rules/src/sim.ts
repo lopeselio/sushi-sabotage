@@ -9,6 +9,7 @@ import { int, next, seedFrom, type Rng } from './rng.ts';
 import { canonical, sha256Hex } from './hash.ts';
 import { botInput, newBot, type BotSkill, type BotState } from './bot.ts';
 import { botInputV2, newBotV2, type BotV2 } from './bot2.ts';
+import { apronTicks, burnWindow, cleanGear, gearLevel, knifeChance, walkMult, type Gear } from './gear.ts';
 
 // Deterministic kitchen simulation. No Math.random, no Date, no DOM.
 // The same (setup, input log) always produces the same state and hash.
@@ -48,6 +49,10 @@ export interface Chef {
   delivered: number; burns: number; trashed: number; expired: number; wrong: number;
   dishes: number[]; // recipe ids delivered, in order
   hits: number; // sabotages landed on rivals
+  /** rules v3: the chef NFT's upgrade levels (absent when it has none, so v1/v2 states hash as before) */
+  gear?: Gear;
+  /** rules v3, with a knife: chops made so far (numbers the knife's rolls) */
+  cuts?: number;
 }
 
 export interface Sabotage {
@@ -60,7 +65,7 @@ export interface Sabotage {
 }
 
 export interface State {
-  /** rules version: 1 = matches before AI chef difficulty (frozen), 2 = now */
+  /** rules version: 1 = before AI chef difficulty (frozen), 2 = AI difficulty (frozen), 3 = + chef upgrades */
   v: RulesVersion;
   seed: string;
   tick: number;
@@ -94,10 +99,12 @@ export interface ChefSetup {
   loadout?: Partial<Record<Card, number>>;
   /** a bot's preferred sabotage target (seat index), e.g. from a scouting report it bought */
   rival?: number;
+  /** rules v3: the chef NFT's upgrade levels, as recorded by the contract at create_match */
+  gear?: Gear;
 }
 
-export type RulesVersion = 1 | 2;
-export const RULES_VERSION: RulesVersion = 2;
+export type RulesVersion = 1 | 2 | 3;
+export const RULES_VERSION: RulesVersion = 3;
 export const DIFFICULTIES: readonly BotSkill[] = ['easy', 'normal', 'hard'];
 
 export interface Setup {
@@ -114,13 +121,13 @@ export interface Setup {
  * create_match: "v2.normal.<hex>" (rooms and solo) or "v2.<hex>" (league, bots at their own level).
  * An untagged seed is rules v1.
  */
-export const taggedSeed = (hex: string, difficulty?: BotSkill): string => `v${RULES_VERSION}.${difficulty ? `${difficulty}.` : ''}${hex}`;
+export const taggedSeed = (hex: string, difficulty?: BotSkill, v: RulesVersion = RULES_VERSION): string => `v${v}.${difficulty ? `${difficulty}.` : ''}${hex}`;
 
 export function seedTag(seed: string): { rulesVersion: RulesVersion; difficulty?: BotSkill } {
   const m = /^v(\d+)\.(?:(easy|normal|hard)\.)?/.exec(seed);
   if (!m) return { rulesVersion: 1 };
-  if (m[1] !== '2') throw new Error(`unknown rules version v${m[1]}`);
-  return { rulesVersion: 2, difficulty: m[2] as BotSkill | undefined };
+  if (m[1] !== '2' && m[1] !== '3') throw new Error(`unknown rules version v${m[1]}`);
+  return { rulesVersion: Number(m[1]) as RulesVersion, difficulty: m[2] as BotSkill | undefined };
 }
 
 /** The setup's rules version, after checking it against what its seed committed to. */
@@ -130,6 +137,7 @@ export function rulesOf(setup: Setup): RulesVersion {
   if (v !== tag.rulesVersion) throw new Error(`setup says rules v${v} but its seed commits to v${tag.rulesVersion}`);
   if (setup.difficulty !== tag.difficulty) throw new Error(`setup difficulty ${setup.difficulty ?? 'none'} but its seed commits to ${tag.difficulty ?? 'none'}`);
   if (setup.difficulty && setup.chefs.some((c) => c.bot && c.bot !== setup.difficulty)) throw new Error(`every AI chef plays at ${setup.difficulty} in this match`);
+  if (v < 3 && setup.chefs.some((c) => c.gear && Object.values(c.gear).some((l) => l))) throw new Error('chef upgrades need rules v3');
   return v;
 }
 
@@ -155,8 +163,8 @@ export function makeRail(seed: string): number[] {
 export function createState(setup: Setup): State {
   if (setup.chefs.length < 1 || setup.chefs.length > MAX_CHEFS) throw new Error(`1..${MAX_CHEFS} chefs`);
   const v = rulesOf(setup);
-  const mk = v === 2 ? newBotV2 : newBot;
-  const chefs: Chef[] = setup.chefs.map((c, i) => ({
+  const mk = v >= 2 ? newBotV2 : newBot;
+  const chefs: Chef[] = setup.chefs.map((c, i) => withGear(c.gear, {
     name: c.name,
     bot: c.bot ? mk(c.bot, `${setup.seed}:${i}`, c.rival) : null,
     x: SPAWN.x, z: SPAWN.z, fx: 0, fz: -1, mx: 0, mz: 0,
@@ -171,6 +179,15 @@ export function createState(setup: Setup): State {
     delivered: 0, burns: 0, trashed: 0, expired: 0, wrong: 0, dishes: [], hits: 0,
   }));
   return { v, seed: setup.seed, tick: 0, rng: { s: seedFrom(`sim:${setup.seed}`) }, rail: makeRail(setup.seed), railIdx: 0, chefs, sab: [], over: false };
+}
+
+/** v3 chefs with upgrades carry them (and a chop counter for the knife); everyone else is unchanged. */
+function withGear(g: Gear | undefined, c: Chef): Chef {
+  const gear = g ? cleanGear(g) : {};
+  if (!Object.keys(gear).length) return c;
+  c.gear = gear;
+  if (gear.knife) c.cuts = 0;
+  return c;
 }
 
 // ---------- helpers shared with the bot and renderer ----------
@@ -236,7 +253,7 @@ export function stationProgress(c: Chef, idx: number, tick: number): { p: number
     const cook = COOKS[t][s.item.k];
     if (cook) return { p: s.p / cook.ticks, burning: false };
     const burn = BURNS[s.item.k];
-    if (burn) return { p: s.p / burn.ticks, burning: true };
+    if (burn) return { p: s.p / burnWindow(burn.ticks, gearLevel(c.gear, 'pan')), burning: true };
   }
   return null;
 }
@@ -269,7 +286,7 @@ export function step(s: State, inputs: (Input | undefined)[] = []): SimEvent[] {
   for (let i = 0; i < s.chefs.length; i++) {
     const c = s.chefs[i];
     const own = inputs[i];
-    if (own?.takeover && !c.bot) c.bot = (s.v === 2 ? newBotV2 : newBot)(own.takeover, `${s.seed}:takeover:${i}`);
+    if (own?.takeover && !c.bot) c.bot = (s.v >= 2 ? newBotV2 : newBot)(own.takeover, `${s.seed}:takeover:${i}`);
     const inp = c.bot ? ((c.bot as BotV2).v === 2 ? botInputV2(s, i) : botInput(s, i)) : own;
     if (inp) applyInput(s, i, inp, ev);
     moveChef(c, s.tick);
@@ -300,6 +317,7 @@ export function moveChef(c: Chef, tick: number): void {
   if (!c.mx && !c.mz) return;
   let sp = MOVE_SPEED / TICK_HZ;
   if (tick < c.slowUntil) sp *= SLICK_SPEED;
+  if (c.gear?.sandals) sp *= walkMult(c.gear.sandals);
   if (c.mx && c.mz) sp *= Math.SQRT1_2;
   const nx = c.x + c.mx * sp;
   if (!collides(nx, c.z)) c.x = nx;
@@ -369,7 +387,11 @@ function chop(s: State, i: number, ev: SimEvent[]): void {
   if (!st.item) return;
   const cut = CUTS[st.item.k];
   if (!cut) return;
-  st.p++;
+  const knife = gearLevel(c.gear, 'knife');
+  if (knife) {
+    c.cuts = (c.cuts ?? 0) + 1;
+    st.p += next({ s: seedFrom(`knife:${s.seed}:${i}:${c.cuts}`) }) < knifeChance(knife) ? 2 : 1;
+  } else st.p++;
   ev.push({ t: 'chop', chef: i, counter: idx });
   if (st.p >= chopsNeeded(c, st.item.k, s.tick)) { st.item = { k: cut.out }; st.p = 0; }
 }
@@ -388,7 +410,7 @@ function tickStations(s: State, i: number, ev: SimEvent[]): void {
       continue;
     }
     const burn = BURNS[st.item.k];
-    if (burn && st.p >= burn.ticks) {
+    if (burn && st.p >= burnWindow(burn.ticks, gearLevel(c.gear, 'pan'))) {
       st.item = { k: burn.to }; st.p = 0;
       c.burns++; c.score += SCORE.burn;
       ev.push({ t: 'burn', chef: i, counter: counter.idx });
@@ -481,11 +503,12 @@ function applyCard(s: State, t: Chef, card: Card): boolean {
         const st = t.st[counter.idx];
         if (!st.item) continue;
         const cook = COOKS[counter.type][st.item.k];
+        const pan = gearLevel(t.gear, 'pan');
         if (cook?.burnsTo && cook.burnTicks) {
-          st.item = { k: cook.out }; st.p = Math.max(0, cook.burnTicks - BOMB_LEFT); hit = true;
+          st.item = { k: cook.out }; st.p = Math.max(0, burnWindow(cook.burnTicks, pan) - BOMB_LEFT); hit = true;
         } else {
           const burn = BURNS[st.item.k];
-          if (burn) { st.p = Math.max(st.p, burn.ticks - BOMB_LEFT); hit = true; }
+          if (burn) { st.p = Math.max(st.p, burnWindow(burn.ticks, pan) - BOMB_LEFT); hit = true; }
         }
       }
       return hit;
@@ -500,12 +523,12 @@ function applyCard(s: State, t: Chef, card: Card): boolean {
       }
       return false;
     }
-    case 'dull_knife': t.dullUntil = s.tick + DULL_TICKS; return true;
-    case 'soy_slick': t.slowUntil = s.tick + SLICK_TICKS; return true;
+    case 'dull_knife': t.dullUntil = s.tick + apronTicks(DULL_TICKS, gearLevel(t.gear, 'apron')); return true;
+    case 'soy_slick': t.slowUntil = s.tick + apronTicks(SLICK_TICKS, gearLevel(t.gear, 'apron')); return true;
     case 'order_shuffle': {
       const o = t.orders[0];
       if (!o) return false;
-      o.due = Math.max(s.tick + 1, o.due - SHUFFLE_TICKS);
+      o.due = Math.max(s.tick + 1, o.due - apronTicks(SHUFFLE_TICKS, gearLevel(t.gear, 'apron')));
       return true;
     }
     default: return false;

@@ -7,3 +7,4 @@ export * from './bot.ts';
 export * from './bot2.ts';
 export * from './market.ts';
 export * from './hint.ts';
+export * from './gear.ts';
