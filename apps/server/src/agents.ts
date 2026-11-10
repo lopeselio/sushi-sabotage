@@ -2,6 +2,7 @@ import { CARD_INFO, CARDS, haggle, listPrice, type BotSkill, type Card, type Hag
 import { call, view } from './chain.ts';
 import { config, hasKey } from './config.ts';
 import { voice, type SignedLine } from './nearai.ts';
+import { budgetOf, type AgentPolicyView, type Budget } from './budget.ts';
 import { kvGet, kvSet } from './store.ts';
 
 // The agents: four AI chefs, the Fixer (sells sabotage cards) and the Scout (sells reports).
@@ -25,6 +26,15 @@ export const DAY_CAP = 150;
 export const MATCH_CAP = 10;
 
 const chefIds = new Map<string, string>();
+
+/** Each AI chef's budget for today (CHEF_AGENTS order), from its policy on the contract. */
+export async function agentBudgets(fee = MATCH_CAP): Promise<Budget[]> {
+  const now = Date.now();
+  return Promise.all(CHEF_AGENTS.map(async (a) => {
+    const p = config.chainEnabled ? await view<AgentPolicyView | null>('get_agent', { account_id: accountOf(a) }).catch(() => null) : null;
+    return budgetOf(p, now, fee);
+  }));
+}
 
 /** The agent's chef token id, if it's set up onchain and its key is here. */
 export async function agentChef(a: AgentDef): Promise<string | null> {
@@ -121,10 +131,9 @@ export async function agentEconomyTick(): Promise<void> {
         // each chef has a favourite card; buy it if the price fits the budget
         const favourite: Card = (['wasabi_bomb', 'fish_swap', 'order_shuffle', 'soy_slick'] as Card[])[CHEF_AGENTS.indexOf(a)];
         const price = prices()[favourite];
-        // keep enough of today's budget for three league entries
-        const policy = await view<{ day: number; spent_today: number; day_cap: number } | null>('get_agent', { account_id: acct }).catch(() => null);
-        const spent = policy && policy.day === day ? policy.spent_today : 0;
-        const room = (policy?.day_cap ?? DAY_CAP) - spent - 3 * MATCH_CAP;
+        // cards come only from spare budget: the player reserve and a few league entries stay untouched
+        const policy = await view<AgentPolicyView | null>('get_agent', { account_id: acct }).catch(() => null);
+        const room = budgetOf(policy, Date.now(), MATCH_CAP).extras;
         if (t.purse >= price + 3 * MATCH_CAP && price <= 30 && price <= room) {
           const { offerId } = await fixerOffer(chef, favourite, price);
           const r = await call(acct, 'accept_offer', { offer_id: offerId });
@@ -134,7 +143,8 @@ export async function agentEconomyTick(): Promise<void> {
       // pay for data: a report on the current leader, at most once an hour
       const top = board.find((row) => row.chef !== chef);
       const lastScout = kvGet<number>(`scouted:${acct}`, 0);
-      if (scoutChef && top && Date.now() - lastScout > 3600_000 && (t?.purse ?? 0) > 20) {
+      const spare = budgetOf(await view<AgentPolicyView | null>('get_agent', { account_id: acct }).catch(() => null), Date.now(), MATCH_CAP).extras;
+      if (scoutChef && top && Date.now() - lastScout > 3600_000 && (t?.purse ?? 0) > 20 && spare >= 5) {
         const r = await call(acct, 'buy_scout', { buyer_chef: chef, scout_chef: scoutChef, about_chef: top.chef });
         kvSet(`scouted:${acct}`, Date.now());
         kvSet(`rival:${acct}`, top.chef);

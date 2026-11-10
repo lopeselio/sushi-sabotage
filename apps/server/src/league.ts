@@ -1,5 +1,6 @@
 import { replay, type Result } from '@sushi/rules';
-import { CHEF_AGENTS, logAct } from './agents.ts';
+import { CHEF_AGENTS, agentBudgets, logAct } from './agents.ts';
+import { affordableRounds, pickLineup, rankedDue } from './budget.ts';
 import { config } from './config.ts';
 import { ChainMatch, planSeats, type SeatPlan } from './match.ts';
 import { kvGet, kvSet } from './store.ts';
@@ -8,6 +9,11 @@ import { kvGet, kvSet } from './store.ts';
 // human involved. The sim runs headless (same rules, same seed commitment, same seals), entry fees
 // go into the pot, prizes and recipe-scroll royalties are paid by the contract, and the season
 // leaderboard moves. The economy keeps going when nobody is playing.
+//
+// Ranked rounds are paced by budget.ts: the AI chefs' daily spending caps are spread evenly over the
+// day, the chefs with the most budget left take the seats, and a reserve stays for ranked shifts
+// against people. The rounds in between are friendly exhibitions (no fee), so the league never
+// stops and ranked play never runs dry at midday.
 
 export const LEAGUE_MINUTES = Number(process.env.LEAGUE_MINUTES ?? 15);
 
@@ -25,7 +31,12 @@ export async function leagueRound(): Promise<{ id: string; ranked: boolean; resu
   try {
     const round = kvGet<number>('leagueRound', 0);
     kvSet('leagueRound', round + 1);
-    const { seats, fee } = await planSeats(lineup(round), { league: true });
+    const budgets = await agentBudgets();
+    const now = Date.now();
+    const due = rankedDue(now, kvGet<number>('leagueLastRanked', 0), affordableRounds(budgets));
+    const plan = due ? pickLineup(budgets).map((k) => ({ name: CHEF_AGENTS[k].name, kind: 'bot' as const, agent: CHEF_AGENTS[k] })) : lineup(round);
+    const { seats, fee } = await planSeats(plan, { league: true, friendly: !due });
+    if (fee > 0) kvSet('leagueLastRanked', now);
     if (!seats.some((s) => s.chef)) return null;
     // no difficulty: league shifts stay on rules v1, each AI chef at its persona skill (Kenji hard,
     // Mei and Hana normal, Tomo easy), exactly the bots the league has always played with
