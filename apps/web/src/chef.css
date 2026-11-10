@@ -8,7 +8,7 @@
 .chefcard .small, .mint-cta .small { font-size: 12px; }
 .xp { position: relative; height: 18px; border-radius: 9px; background: rgba(255, 255, 255, .08); margin: 10px 0; overflow: hidden; }
 .xp-fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ffb547, #ffd27a); }
-.xp small { position: relative; display: block; text-align: center; font-size: 11px; line-height: 18px; color: #1b1420; font-weight: 700; mix-blend-mode: normal; }
+.xp small { position: relative; display: block; text-align: center; font-size: 11px; line-height: 18px; color: #fff3e0; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
 .stat { background: rgba(255, 255, 255, .06); border-radius: 12px; padding: 8px; text-align: center; }
 .stat b { display: block; font-size: 20px; }
