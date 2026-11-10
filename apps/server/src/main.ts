@@ -55,6 +55,8 @@ async function soloStart(account: string | null, name: string, bots: number, loa
     ...soloBots(bots).map((a): SeatPlan => ({ name: a.name, kind: 'bot', agent: a })),
   ];
   const planned = await planSeats(seats);
+  // a ranked shift (entry fees at stake) is never played against Easy chefs: that would farm the agents' fees
+  if (planned.fee > 0 && difficulty === 'easy') difficulty = 'normal';
   const match = new ChainMatch('solo', planned.seats, planned.fee, difficulty);
   const setup = match.setup;
   solos.set(match.id, { match, expires: Date.now() + 15 * 60_000, you: 0 });

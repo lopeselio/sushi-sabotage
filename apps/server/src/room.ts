@@ -166,6 +166,8 @@ export class Room {
       ? { name: m.name, kind: 'bot', agent: m.bot }
       : { name: m.name, kind: m.account ? 'human' : 'guest', account: m.account ?? undefined, loadout: m.loadout }));
     const { seats, fee } = await planSeats(plans);
+    // ranked rooms with AI chefs play them at Normal or above (Easy would farm the agents' entry fees)
+    if (fee > 0 && this.difficulty === 'easy') this.difficulty = 'normal';
     // the match's secret seed drives the orders; only its hash goes onchain at create
     const match = new ChainMatch('room', seats, fee, this.difficulty);
     this.match = match;
