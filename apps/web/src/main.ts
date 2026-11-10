@@ -183,7 +183,11 @@ let lastSolo: { rivals: number; difficulty: Difficulty } | null = null;
 function shiftHelp(s: Shift): void {
   if (modalOpen()) return;
   if (s.canPause) s.paused = true;
-  howToPlay({ inShift: true, replay: () => toast('The walkthrough runs in your next solo shift', 'good'), onClose: () => { s.paused = false; } });
+  howToPlay({
+    inShift: true,
+    replay: () => { if (s.watcher instanceof Walkthrough) s.watcher.end(false); toast('The walkthrough runs in your next solo shift', 'good'); },
+    onClose: () => { s.paused = false; },
+  });
 }
 
 async function soloEnd(matchId: string, state: State, log: LogEntry[], ranked: boolean): Promise<void> {
