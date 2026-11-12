@@ -155,8 +155,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     if (p === '/api/leaderboard') return json(res, 200, config.chainEnabled ? await view('leaderboard', { limit: 20 }).catch(() => []) : []);
     if (p === '/api/agents') {
-      const budgets = await agentBudgets();
+      const [budgets, st] = await Promise.all([agentBudgets(), config.chainEnabled ? chainStatus().catch(() => null) : null]);
       return json(res, 200, {
+        // when the contract can't store anything new, every agent action below fails: say so up top
+        storage: st?.contract.warning ?? null,
         acts: recentActs().map((a) => ({ ...a, url: a.tx ? explorerTx(a.tx) : undefined })),
         chefs: CHEF_AGENTS.map((a, i) => ({ name: a.name, account: accountOf(a), skill: a.skill, budget: budgets[i] })),
         league: { rankedRoundsLeft: affordableRounds(budgets), playerReserve: PLAYER_RESERVE, dayCap: DAY_CAP, matchCap: MATCH_CAP },
