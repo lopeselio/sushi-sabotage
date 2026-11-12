@@ -217,7 +217,7 @@ export abstract class Shift {
   private buildHud(): void {
     this.ui = new Hud({
       you: this.you, names: this.names, colors: this.names.map((_, i) => hex(CHEF_COLORS[i % 4])),
-      setTarget: (i) => this.setTarget(i), playCard: (c) => this.playCard(c), help: () => this.help(), toggleHints: () => this.toggleHints(),
+      setTarget: (i) => this.setTarget(i), cycleTarget: () => this.cycleTarget(), touch: isTouch(), playCard: (c) => this.playCard(c), help: () => this.help(), toggleHints: () => this.toggleHints(),
     }, touchPad(this));
     mount(this.hud, this.ui.root);
   }
