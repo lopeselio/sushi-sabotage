@@ -65,6 +65,27 @@ export function call<T = unknown>(signer: string, method: string, args: object, 
   return run;
 }
 
+/**
+ * A failed call's error in words, for receipts people read: "post_offer failed: the contract is out
+ * of storage NEAR (LackBalanceForState)" instead of a JSON blob cut off mid-string.
+ */
+export function readableError(e: unknown): string {
+  const msg = String((e as Error)?.message ?? e);
+  const m = /^(\w+) failed: (\{.*)$/s.exec(msg);
+  if (!m) return msg.length > 160 ? `${msg.slice(0, 157)}…` : msg;
+  const [, method, raw] = m;
+  const reason = (() => {
+    if (/LackBalanceForState/.test(raw)) return 'the contract is out of storage NEAR (LackBalanceForState)';
+    if (/NotEnoughBalance/.test(raw)) return 'the signer is out of NEAR for gas (NotEnoughBalance)';
+    if (/NotEnoughAllowance/.test(raw)) return "the agent's key allowance is used up (NotEnoughAllowance)";
+    const panic = /Smart contract panicked: ([^"\\]*)/.exec(raw)?.[1];
+    if (panic) return `the contract refused: ${panic}`;
+    const kind = /"kind":\{"(\w+)"/.exec(raw)?.[1] ?? /"(\w+Error)"/.exec(raw)?.[1];
+    return kind ? `transaction failed (${kind})` : 'transaction failed';
+  })();
+  return `${method} failed: ${reason}`;
+}
+
 const functionCall = (method: string, args: object, gasTera: number, deposit: bigint) =>
   actions.functionCall(method, args as Record<string, unknown>, teraToGas(gasTera), deposit);
 
