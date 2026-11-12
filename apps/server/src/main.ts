@@ -12,6 +12,7 @@ import { ChainMatch, planSeats, soloBots, type SeatPlan } from './match.ts';
 import { attestation } from './nearai.ts';
 import { Room } from './room.ts';
 import { startLeague } from './league.ts';
+import { startPruning } from './prune.ts';
 import { chainStatus, startWatch } from './status.ts';
 import { loadMatch, recentMatches } from './store.ts';
 
@@ -167,7 +168,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (!m) return json(res, 404, { error: 'no such match' });
       // the input log and seed are public only after the match is over
       const done = !!m.results;
-      return json(res, 200, { ...m, seed: done ? m.seed : undefined, openings: done ? m.openings : [], log: done ? m.log : [], txs: m.txs.map((t) => ({ ...t, url: explorerTx(t.hash) })) });
+      return json(res, 200, { ...m, seed: done ? m.seed : undefined, openings: done ? m.openings : [], log: done ? m.log : [], txs: m.txs.map((t) => ({ ...t, url: explorerTx(t.hash) })), pruned: m.pruned && { ...m.pruned, url: explorerTx(m.pruned.tx) } });
     }
     if (p === '/api/attestation') return json(res, 200, await attestation());
     if (p === '/api/rooms') return json(res, 200, Room.list());
@@ -228,4 +229,5 @@ if (config.chainEnabled) {
   }
   startLeague();
   startWatch();
+  startPruning();
 }
