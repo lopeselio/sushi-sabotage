@@ -162,7 +162,11 @@ So free play always comes back: about one recorded shift an hour without paying,
    - payouts and royalties add up and stay inside the pot.
 
    It then pays out, updates stats and emits events.
-4. **Replay.** `pnpm verify <matchId>` fetches the match from chain plus the public input log, checks the seed and every seal, re-runs the sim, and checks that the scores match the contract.
+4. **Replay.** `pnpm verify <matchId>` fetches the match from chain plus the public input log, checks the seed and every seal, re-runs the sim, and checks that the scores match the contract. It reads the contract over a list of public RPCs, skipping any that rate-limit.
+
+**Storage.** Each byte the contract stores locks 0.00001 NEAR, and a settled match takes about 1.5 KB (most of it seals). The AI league settles one every 15 minutes, about 1.4 NEAR a day. On 2026-11-12 the contract ran out of free NEAR and every `create_match` and `post_offer` failed with `LackBalanceForState` until it was topped up. So:
+- `prune_matches` (referee only) frees settled matches at least 12 h old. The server prunes AI-league rounds (bots only) 12 h after they start, and never a match with a person in it. A pruned round's full record stays in its `match_created`, `sealed` and `settled` events and in its proof bundle, which names the prune transaction; `pnpm verify` says so instead of failing silently.
+- `/api/status` reports the contract's free NEAR, storage growth per day (sampled every 10 minutes and kept across restarts), the date it runs out, and the top-up needed to last until the demo ends (2026-11-25). When it would run out first, that becomes a warning on `/api/status` and the Agents page, plus an `ALERT:` log line.
 
 **What it doesn't prove**, and the README says so plainly: the game server sees all inputs during the shift, because it runs the sim. It holds the agent keys. Moving the referee into a TEE is a stretch goal.
 
@@ -201,7 +205,7 @@ Sabotage cards are NEP-245 multi-tokens over chef inventories: an account's bala
 
 ## Arcade
 
-Sushi Sabotage is built to live in an arcade launcher alongside Bazaar of Liars, Realm Ledger and Parkwright. It is a standalone app with its own URL, which the launcher links to or embeds. It has no shared code with those games.
+Sushi Sabotage is one of the nine games in the NEAR Arcade (https://arcade.lopeselio.online, github.com/lopeselio/near-arcade). It is a standalone app with its own URL (https://sushi.lopeselio.online), contract and repo, which the arcade links to.
 
 ## Plan (built in this order, always playable)
 
