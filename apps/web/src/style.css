@@ -141,7 +141,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .h-row { position: relative; display: flex; gap: 8px; align-items: center; justify-content: flex-start; background: var(--panel); padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); border-left: 4px solid var(--c); font-weight: 600; font-size: 13.5px; width: 100%; text-align: left; transition: border-color .2s; }
 .h-row .rname { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .h-row b { font-variant-numeric: tabular-nums; font-size: 15px; }
-.h-row em { font-size: 10px; font-style: normal; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--bad); }
+.h-row em { font-size: 11px; font-style: normal; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--bad); }
 .h-row em:empty { display: none; }
 .h-row.target { border-color: var(--bad); border-left-color: var(--c); box-shadow: 0 0 0 1px var(--bad) inset; }
 .h-row.you { cursor: default; background: color-mix(in srgb, var(--c) 22%, var(--panel-solid)); }
@@ -153,7 +153,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); display: inline-block; flex: none; }
 
 .h-hint { position: absolute; top: 112px; left: var(--gut); background: rgba(255, 210, 63, 0.96); color: #2a1a00; font-weight: 800; padding: 8px 14px; border-radius: 14px; font-size: 15px; box-shadow: 0 0 22px rgba(255, 190, 40, 0.45); display: flex; gap: 8px; align-items: center; max-width: min(320px, calc(100% - 24px)); animation: rise .25s ease-out; }
-.h-hint small { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; background: #2a1a00; color: var(--amber); padding: 2px 6px; border-radius: 99px; }
+.h-hint small { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: #2a1a00; color: var(--amber); padding: 2px 6px; border-radius: 99px; }
 .h-hint:empty { display: none; }
 
 .h-bl { position: absolute; left: var(--gut); bottom: var(--gut); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; max-width: calc(50% - 330px); min-width: 170px; }
@@ -166,7 +166,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .h-hand { position: absolute; bottom: var(--gut); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(620px, calc(100% - 2 * var(--gut))); }
 .h-handtop { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 12.5px; }
 .h-meter { display: flex; gap: 8px; align-items: center; background: var(--panel); padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); }
-.h-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
+.h-label { font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
 .pips { display: flex; gap: 4px; }
 .pips i { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255, 154, 60, 0.6); transition: background .2s, box-shadow .2s; }
 .pips i.on { background: var(--lantern); border-color: #ffd1a0; box-shadow: 0 0 9px var(--lantern); }
@@ -178,10 +178,10 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .h-cd:empty { display: none; }
 .h-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; width: 100%; }
 .h-card { position: relative; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 3px; padding: 7px 8px 8px; background: rgba(30, 21, 40, 0.92); border-radius: 10px; text-align: left; opacity: 0.55; min-width: 0; }
-.h-card kbd { position: absolute; top: 5px; right: 5px; font-size: 10px; padding: 1px 5px; }
+.h-card kbd { position: absolute; top: 5px; right: 5px; font-size: 11px; padding: 1px 5px; }
 .h-card b { font-size: 12.5px; line-height: 1.15; padding-right: 20px; }
 .h-card .short { display: none; }
-.h-card small { font-size: 10.5px; color: var(--dim); font-weight: 500; }
+.h-card small { font-size: 11px; color: var(--dim); font-weight: 500; }
 .h-card small:empty { display: none; }
 .h-card .cost { display: flex; gap: 3px; }
 .cost i { width: 8px; height: 8px; border-radius: 50%; background: var(--lantern); display: inline-block; }
@@ -292,7 +292,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .step { display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(150px, 30%); animation: rise .5s ease-out backwards; }
 .step.p1 { animation-delay: .35s; } .step.p2 { animation-delay: .15s; }
 .step .who { display: flex; flex-direction: column; align-items: center; text-align: center; font-size: 14px; gap: 0; }
-.step .who small { font-size: 10px; text-transform: uppercase; font-weight: 800; color: var(--lantern); letter-spacing: 1px; }
+.step .who small { font-size: 11px; text-transform: uppercase; font-weight: 800; color: var(--lantern); letter-spacing: 1px; }
 .crown { font-size: 26px; animation: wobble 2s ease-in-out infinite; }
 .step .block { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 10px; border-radius: 12px 12px 4px 4px; background: linear-gradient(180deg, color-mix(in srgb, var(--c) 75%, #fff), color-mix(in srgb, var(--c) 35%, #120d1c)); border: 1px solid color-mix(in srgb, var(--c) 70%, #fff); box-shadow: inset 0 2px 0 rgba(255,255,255,0.25); }
 .step.p1 .block { height: 120px; } .step.p2 .block { height: 88px; } .step.p3 .block { height: 64px; }
@@ -329,7 +329,7 @@ code { font-size: 12px; color: var(--dim); }
 .chef { display: grid; grid-template-columns: 240px 1fr; gap: 20px; }
 .nft img { width: 100%; border-radius: 16px; border: 1px solid var(--line); }
 .owned { display: flex; gap: 8px; flex-wrap: wrap; }
-.tok { width: 92px; font-size: 10px; } .tok img { width: 92px; border-radius: 8px; }
+.tok { width: 92px; font-size: 11px; } .tok img { width: 92px; border-radius: 8px; }
 .lb { line-height: 2.2; padding-left: 22px; } .lb li { border-bottom: 1px solid var(--line); } .lb span { float: right; font-weight: 800; color: var(--lantern); }
 
 /* toasts */
@@ -368,7 +368,7 @@ code { font-size: 12px; color: var(--dim); }
   .ticket { width: 118px; padding: 6px 7px 6px; }
   .t-head { flex-direction: column; gap: 0; margin-bottom: 3px; }
   .t-head b { font-size: 11.5px; }
-  .chip { font-size: 9.5px; padding: 1px 5px; }
+  .chip { font-size: 11px; padding: 1px 6px; }
   .h-tr { width: 112px; gap: 5px; }
   .h-top { flex-direction: column; align-items: flex-end; gap: 5px; }
   .h-clock { font-size: 22px; padding: 6px 10px; min-width: 0; width: 100%; }
@@ -382,7 +382,7 @@ code { font-size: 12px; color: var(--dim); }
   .h-card { padding: 5px 5px 6px; gap: 2px; }
   .h-card .long { display: none; } .h-card .short { display: block; font-size: 11.5px; padding-right: 0; margin-top: 12px; }
   .h-card kbd { top: 3px; left: 4px; right: auto; }
-  .h-card small { font-size: 9px; }
+  .h-card small { font-size: 11px; }
   .h-cards { gap: 4px; }
   .h-handtop { gap: 6px; font-size: 11px; }
   .h-meter { padding: 4px 8px; gap: 6px; }
@@ -439,3 +439,8 @@ code { font-size: 12px; color: var(--dim); }
 .touch-ui .h-card .short { margin-top: 0; }
 /* an on-screen button named in the walkthrough, styled like a key */
 kbd.tap { background: var(--lantern); color: #2a1406; border-color: #ffd1a0; font-size: 12px; }
+@media (max-width: 720px) {
+  .h-label { font-size: 11px; }
+  .h-handtop { font-size: 12px; }
+  .h-row { font-size: 12px; }
+}
