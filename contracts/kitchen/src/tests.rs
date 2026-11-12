@@ -321,3 +321,39 @@ fn cards_need_a_chef_to_land_on() {
     ctx_yocto("alice.testnet");
     k.mt_transfer(acc("nobody.testnet"), "dull_knife".into(), U128(1), None, None);
 }
+
+fn ctx_at(who: &str, ns: u64) {
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("kitchen.testnet")).predecessor_account_id(acc(who)).block_timestamp(ns);
+    testing_env!(b.build());
+}
+
+#[test]
+fn settled_matches_are_pruned_once_old_enough_and_nothing_else() {
+    let mut k = setup();
+    let (a, b) = two_chef_match(&mut k);
+    ctx("ref.testnet");
+    k.create_match("m2".into(), sha("seed2"), vec![seat(&a), seat(&b)], 0, false, None);
+    k.settle_match("m1".into(), "seed".into(), vec![], vec![], vec![report(100, vec![]), report(50, vec![])]);
+    // too young: nothing goes
+    ctx_at("ref.testnet", PRUNE_AFTER_NS - 1);
+    assert!(k.prune_matches(vec!["m1".into(), "m2".into(), "nope".into()]).is_empty());
+    ctx_at("ref.testnet", PRUNE_AFTER_NS);
+    // m2 is unsettled, so it stays; unknown ids are skipped
+    assert_eq!(k.prune_matches(vec!["m1".into(), "m2".into(), "nope".into()]), vec!["m1".to_string()]);
+    assert!(k.get_match("m1".into()).is_none());
+    assert!(k.get_match("m2".into()).is_some());
+    assert!(get_logs().iter().any(|l| l.contains("pruned") && l.contains("m1")));
+    // the chefs' stats and the board are untouched
+    let Kind::Chef { stats, .. } = k.get_token(a.clone()).unwrap().kind else { panic!() };
+    assert_eq!(stats.wins, 1);
+    assert_eq!(k.leaderboard(None)[0].chef, a);
+}
+
+#[test]
+#[should_panic(expected = "only the referee")]
+fn only_the_referee_prunes() {
+    let mut k = setup();
+    ctx("alice.testnet");
+    k.prune_matches(vec!["m1".into()]);
+}
