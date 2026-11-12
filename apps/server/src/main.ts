@@ -12,7 +12,7 @@ import { ChainMatch, planSeats, soloBots, type SeatPlan } from './match.ts';
 import { attestation } from './nearai.ts';
 import { Room } from './room.ts';
 import { startLeague } from './league.ts';
-import { chainStatus } from './status.ts';
+import { chainStatus, startWatch } from './status.ts';
 import { loadMatch, recentMatches } from './store.ts';
 
 // ---------- tiny HTTP helpers ----------
@@ -110,8 +110,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const me = await accountFromHeaders(req.headers);
     if (p === '/api/health') return json(res, 200, { ok: true, version: process.env.APP_VERSION ?? 'dev' });
     if (p === '/api/status') {
-      const accounts = config.chainEnabled ? await chainStatus() : [];
-      return json(res, 200, { version: process.env.APP_VERSION ?? 'dev', chain: config.chainEnabled, warnings: accounts.filter((a) => a.low).map((a) => a.account), accounts });
+      const st = config.chainEnabled ? await chainStatus() : null;
+      return json(res, 200, { version: process.env.APP_VERSION ?? 'dev', chain: config.chainEnabled, warnings: st?.warnings ?? [], contract: st?.contract ?? null, accounts: st?.accounts ?? [] });
     }
     if (p === '/api/config') {
       return json(res, 200, {
@@ -227,4 +227,5 @@ if (config.chainEnabled) {
     setInterval(loop, 10 * 60_000).unref();
   }
   startLeague();
+  startWatch();
 }
