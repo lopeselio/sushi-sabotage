@@ -21,6 +21,8 @@ interface Bundle {
   openings: { caster: number; target: number; card: string; tick: number; salt: string }[];
   accusations: Accusation[]; results?: { final: number }[]; stateHash?: string; settled: boolean;
   lines: { who: string; text: string; signature?: string; signingAddress?: string }[];
+  pruned?: { at: number; tx: string; url?: string };
+  txs?: { what: string; hash: string; url?: string }[];
 }
 interface ChainMatch { seed_hash: string; seals: string[]; settled: boolean; finals: number[]; ranks: number[]; payouts: number[]; royalties: number; ranked: boolean }
 
@@ -56,6 +58,14 @@ const bundle = await fetchBundle();
 const chain = await view<ChainMatch | null>('get_match', { match_id: id }).catch((e: Error) => fail(e instanceof RpcError ? e.message : `RPC: ${e.message}`));
 console.log(`match ${id} — ${bundle.setup.chefs.map((c) => c.name).join(', ')}\n`);
 
+if (!chain && bundle.pruned) {
+  // an AI-league round 12 h+ old: the referee freed its contract storage (prune_matches), so there is
+  // no contract state left to compare with; its events and transactions are still onchain
+  console.log(`✗ the contract no longer holds this AI-league round: its storage was freed on ${new Date(bundle.pruned.at).toISOString().slice(0, 16)}Z (${bundle.pruned.url ?? bundle.pruned.tx}).`);
+  console.log(`  Its record is in the transactions' events: ${(bundle.txs ?? []).map((t) => `${t.what} ${t.url ?? t.hash}`).join(', ')}`);
+  console.log(`  Verify a recent league round or any player shift from ${HOST}/api/matches instead.`);
+  process.exit(1);
+}
 check(!!chain, 'the contract has this match');
 if (!chain) process.exit(1);
 check(chain.settled, 'the contract settled it');
