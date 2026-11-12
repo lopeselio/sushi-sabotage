@@ -431,3 +431,9 @@ code { font-size: 12px; color: var(--dim); }
 .tbtn.view { width: 56px; height: 56px; flex-direction: column; gap: 0; padding: 0; font-size: 20px; line-height: 1; }
 .tbtn.view small { font-size: 11px; font-weight: 800; }
 .tbtn.view.on { background: var(--lantern); color: #2a1406; }
+/* the target chip's cycler: Tab on a keyboard, a Next › button on touch */
+.h-cycle { padding: 0; background: none; border: 0; border-radius: 6px; }
+.h-cycle:hover { background: none; }
+.touch-ui .h-cycle { min-height: 40px; padding: 6px 14px; margin-left: 4px; background: var(--lantern); color: #2a1406; border-radius: 99px; font-weight: 800; font-size: 14px; }
+.touch-ui .h-aim { padding: 2px 2px 2px 10px; }
+.touch-ui .h-card .short { margin-top: 0; }

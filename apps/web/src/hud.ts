@@ -12,6 +12,9 @@ export interface HudHooks {
   names: string[];
   colors: string[];
   setTarget: (i: number) => void;
+  cycleTarget: () => void;
+  /** Touch screen: tap wording instead of key names. */
+  touch: boolean;
   playCard: (c: Card) => void;
   help: () => void;
   toggleHints: () => void;
@@ -59,7 +62,7 @@ export class Hud {
     o.names.forEach((n, i) => {
       const score = h('b', {}, '0');
       const tag = h('em', {});
-      const el = h('button', { class: `h-row${i === o.you ? ' you' : ''}`, style: `--c:${o.colors[i]}`, title: i === o.you ? 'You' : `Target ${n} (Tab cycles)`, onclick: tap(() => { if (i !== o.you) o.setTarget(i); }) },
+      const el = h('button', { class: `h-row${i === o.you ? ' you' : ''}`, style: `--c:${o.colors[i]}`, title: i === o.you ? 'You' : `Target ${n}${o.touch ? '' : ' (Tab cycles)'}`, onclick: tap(() => { if (i !== o.you) o.setTarget(i); }) },
         h('span', { class: 'dot' }), h('span', { class: 'rname' }, i === o.you ? `${n} (you)` : n), tag, score);
       this.rows.push({ el, score, tag });
       this.board.append(el);
@@ -70,12 +73,13 @@ export class Hud {
       const info = CARD_INFO[card];
       const sub = h('small', {});
       const el = h('button', { class: `h-card${info.self ? ' self' : ''}`, title: `${info.name}: ${info.blurb}`, onclick: tap(() => o.playCard(card)) },
-        h('kbd', {}, String(k + 1)), h('b', { class: 'long' }, info.name), h('b', { class: 'short' }, SHORT[card]),
+        o.touch ? null : h('kbd', {}, String(k + 1)), h('b', { class: 'long' }, info.name), h('b', { class: 'short' }, SHORT[card]),
         h('span', { class: 'cost', 'aria-label': `costs ${info.cost}` }, ...Array.from({ length: info.cost }, () => h('i'))), sub);
       this.cardEls.push({ el, sub });
       return el;
     }));
-    this.hand.append(h('div', { class: 'h-handtop' }, this.meter, h('span', { class: 'h-aim' }, '🎯 ', this.targetEl, h('kbd', {}, 'Tab')), this.cdEl), cards);
+    this.hand.append(h('div', { class: 'h-handtop' }, this.meter, h('span', { class: 'h-aim' }, '🎯 ', this.targetEl,
+      h('button', { class: 'h-cycle', title: o.touch ? 'Next rival' : 'Next rival (Tab)', 'aria-label': 'Target the next rival', onclick: tap(o.cycleTarget) }, o.touch ? 'Next ›' : h('kbd', {}, 'Tab'))), this.cdEl), cards);
     this.root = h('div', { class: 'hud-root' },
       this.orders,
       h('div', { class: 'h-tr' }, h('div', { class: 'h-top' }, this.clock, buttons), this.board),
