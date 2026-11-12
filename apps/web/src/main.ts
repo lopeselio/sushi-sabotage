@@ -452,10 +452,8 @@ async function myChef(): Promise<void> {
 }
 
 async function fetchOwned(): Promise<{ token_id: string; metadata: { title: string; media: string; description: string } }[]> {
-  if (!me || !cfg) return [];
-  const res = await fetch('https://test.rpc.fastnear.com', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'call_function', finality: 'optimistic', account_id: cfg.contract, method_name: 'nft_tokens_for_owner', args_base64: btoa(JSON.stringify({ account_id: me.accountId })) } }) });
-  const j = (await res.json()) as { result?: { result: number[] } };
-  return j.result ? JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result))) : [];
+  // through the server, which falls back across several RPCs (public ones rate-limit browsers)
+  return me ? api('/owned') : [];
 }
 
 // ---------- leaderboard, agents, how to play ----------
