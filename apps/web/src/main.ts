@@ -352,7 +352,7 @@ function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean;
     })) : h('p', { class: 'dim' }, 'Nobody played a card.'),
     r.solo ? h('p', { class: 'dim small' }, r.ranked ? 'Ranked solo: your browser ran the sim, so only the AI chefs’ accusations score. In multiplayer the server never tells anyone who cast what.' : 'Solo, unranked: your accusations scored. In multiplayer the server never tells anyone who cast what.') : null,
     h('h3', {}, 'Onchain proof'),
-    h('div', { class: 'proof', id: 'proof' }, proofLinks(r)),
+    h('div', { class: 'proof', id: 'proof' }, proofLinks({ ...r, recorded: (lastShiftRecorded = r.recorded ?? !!me?.chef) })),
     h('div', { class: 'row actions' },
       r.solo && lastSolo ? h('button', { class: 'big', onclick: () => solo(lastSolo!.rivals, lastSolo!.difficulty) }, 'Play again') : null,
       h('button', { class: r.solo && lastSolo ? 'ghost' : 'big', onclick: title }, 'Back to the kitchen'),
@@ -364,11 +364,25 @@ function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean;
   if (me) void api<Me>('/me').then((m) => { me = m; if (page === 'results') fillSlot('results-cta', lastCta()); }).catch(() => undefined);
 }
 
-function proofLinks(r: { txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string; matchId: string }): HTMLElement {
+let lastShiftRecorded = false;
+
+/** A match's chain error in a sentence (the server keeps the raw one in the proof bundle). */
+function chainError(e: string): string {
+  const what = /^(\w+)/.exec(e)?.[1] ?? 'a chain call';
+  if (/LackBalanceForState/.test(e)) return `Not recorded onchain: ${what} failed because the contract is out of storage NEAR.`;
+  const panic = /Smart contract panicked: ([^"\\]*)/.exec(e)?.[1];
+  if (panic) return `Not recorded onchain: ${what} was refused (${panic}).`;
+  return `Not recorded onchain: ${what} failed. The full error is in the proof bundle.`;
+}
+
+function proofLinks(r: { txs: { what: string; hash: string; url?: string }[]; ranked: boolean; error?: string; matchId: string; recorded?: boolean }): HTMLElement {
+  const unranked = r.recorded
+    ? 'Unranked (no entry fee). The shift still lands on your chef NFT: XP, stats and energy.'
+    : 'Unranked (no entry fee). The match is sealed and settled onchain; the AI chefs’ stats land on their NFTs, and as a guest nothing lands on a chef of yours.';
   return h('div', {},
-    h('p', { class: 'dim' }, r.ranked ? 'Ranked: entry fees went into the pot; prizes and recipe-scroll royalties are paid by the contract.' : 'Unranked (no entry fee). Stats still land on chef NFTs.'),
-    r.txs.length ? h('ul', { class: 'txs' }, ...r.txs.map((t) => h('li', {}, h('a', { href: t.url ?? explorer(t.hash), target: '_blank' }, t.what), ' ', h('code', {}, `${t.hash.slice(0, 10)}…`)))) : h('p', { class: 'dim' }, 'Settling onchain…'),
-    r.error ? h('p', { class: 'bad' }, r.error) : null);
+    h('p', { class: 'dim' }, r.ranked ? 'Ranked: entry fees went into the pot; prizes and recipe-scroll royalties are paid by the contract.' : unranked),
+    r.txs.length ? h('ul', { class: 'txs' }, ...r.txs.map((t) => h('li', {}, h('a', { href: t.url ?? explorer(t.hash), target: '_blank' }, t.what), ' ', h('code', {}, `${t.hash.slice(0, 10)}…`)))) : r.error ? null : h('p', { class: 'dim' }, 'Settling onchain…'),
+    r.error ? h('p', { class: 'bad' }, chainError(r.error)) : null);
 }
 
 function pollTxs(matchId: string, tries = 0): void {
@@ -376,7 +390,7 @@ function pollTxs(matchId: string, tries = 0): void {
     const m = await api<{ txs: { what: string; hash: string; url: string }[]; settled: boolean; ranked: boolean; error?: string }>(`/match/${matchId}`).catch(() => null);
     const box = document.getElementById('proof');
     if (!m || !box) return;
-    box.replaceChildren(proofLinks({ ...m, matchId }));
+    box.replaceChildren(proofLinks({ ...m, matchId, recorded: lastShiftRecorded }));
     if (!m.settled && !m.error && tries < 20) pollTxs(matchId, tries + 1);
   }, 3000);
 }

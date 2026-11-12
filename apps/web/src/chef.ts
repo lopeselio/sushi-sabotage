@@ -67,7 +67,7 @@ export function signInCta(hooks: ChefHooks, after = false): HTMLElement {
     h('div', {},
       h('h3', {}, after ? 'Make your next shift count' : 'Get a free Chef NFT'),
       h('p', { class: 'dim' }, after
-        ? 'That shift was a guest shift, so nothing was recorded. Sign in with a NEAR testnet wallet and mint your chef for free: from your next shift on you earn XP and levels, unlock upgrades and climb the leaderboard.'
+        ? 'That was a guest shift: the match was settled onchain, but no chef of yours was there to earn from it. Sign in with a NEAR testnet wallet and mint your chef for free: from your next shift on you earn XP and levels, unlock upgrades and climb the leaderboard.'
         : 'Guests play free. Sign in with a NEAR testnet wallet to mint a Chef NFT for free (the game pays the gas) and have your shifts recorded.'),
       h('div', { class: 'row' }, h('button', { class: 'big mint', onclick: () => void hooks.signIn() }, 'Sign in with NEAR'), after ? h('small', { class: 'dim' }, 'then press “Mint your chef — free”') : null)));
 }
