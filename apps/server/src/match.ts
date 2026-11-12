@@ -151,10 +151,18 @@ export class ChainMatch {
       saveMatch(this.rec);
       return true;
     } catch (e) {
+      // a send that timed out may still have landed: if the contract holds this match, it was created
+      if (await this.onchain((m) => m.seed_hash === this.rec.seedHash)) return true;
       this.rec.error = `create_match: ${(e as Error).message.slice(0, 300)}`;
       saveMatch(this.rec);
       return false;
     }
+  }
+
+  /** Whether the contract's record of this match passes `test` (after a call whose outcome is unknown). */
+  private async onchain(test: (m: { seed_hash: string; settled: boolean }) => boolean): Promise<boolean> {
+    const m = await view<{ seed_hash: string; settled: boolean } | null>('get_match', { match_id: this.id }).catch(() => null);
+    return !!m && test(m);
   }
 
   /** Record new sabotages (from s.sab, in cast order) as openings + seals. */
@@ -220,7 +228,8 @@ export class ChainMatch {
         this.rec.txs.push({ what: 'settle_match', hash: r.tx });
         this.rec.settled = true;
       } catch (e) {
-        this.rec.error = `settle_match: ${(e as Error).message.slice(0, 300)}`;
+        if (await this.onchain((m) => m.settled)) this.rec.settled = true;
+        else this.rec.error = `settle_match: ${(e as Error).message.slice(0, 300)}`;
       }
       saveMatch(this.rec);
     })();
