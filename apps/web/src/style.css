@@ -312,6 +312,8 @@ tr.you td { background: rgba(255,154,60,0.1); }
 .tag-s { margin-left: 6px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--card-hi); color: var(--dim); }
 .actions { justify-content: center; margin-top: 18px; }
 .txs, .acts, .matches, .agents { padding-left: 18px; line-height: 1.7; font-size: 14px; }
+.acts li.failed { color: var(--dim); overflow-wrap: anywhere; } .acts li { overflow-wrap: anywhere; }
+p.warn { color: #ffd6a0; background: rgba(240, 160, 32, 0.1); border: 1px solid rgba(240, 160, 32, 0.45); border-radius: 8px; padding: 8px 12px; }
 code { font-size: 12px; color: var(--dim); }
 
 /* market, chef, boards */

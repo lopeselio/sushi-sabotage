@@ -463,7 +463,7 @@ async function agents(): Promise<void> {
   stopShift();
   page = 'agents';
   type Budget = { left: number; forPlayers: number; forLeague: number; leagueEntries: number };
-  const a = await api<{ acts: { at: number; who: string; what: string; url?: string }[]; chefs: { name: string; account: string; skill: string; budget?: Budget }[]; league?: { rankedRoundsLeft: number; playerReserve: number; dayCap: number; matchCap: number } }>('/agents').catch(() => null);
+  const a = await api<{ storage?: string | null; acts: { at: number; who: string; what: string; url?: string; failed?: boolean }[]; chefs: { name: string; account: string; skill: string; budget?: Budget }[]; league?: { rankedRoundsLeft: number; playerReserve: number; dayCap: number; matchCap: number } }>('/agents').catch(() => null);
   const lg = a?.league;
   mount(ui, nav(), h('div', { class: 'panel' },
     h('h2', {}, 'The agents'),
@@ -472,7 +472,9 @@ async function agents(): Promise<void> {
     a?.chefs?.some((c) => c.budget) ? h('ul', { class: 'agents' }, ...a.chefs.map((c) => h('li', {}, h('b', {}, c.name), c.budget ? ` · ${c.budget.left} ryo left today · ${c.budget.forPlayers} kept for your ranked shifts · ${c.budget.leagueEntries} league entries` : ''))) : null,
     h('ul', { class: 'agents' }, ...(cfg?.agents ?? []).map((x) => h('li', {}, h('b', {}, x.name), ' ', h('a', { href: explorerAccount(x.account), target: '_blank' }, x.account), x.chef ? ` · ${x.chef}` : '', x.skill ? ` · ${x.skill}` : ''))),
     h('h3', {}, 'Receipts'),
-    h('ul', { class: 'acts' }, ...(a?.acts ?? []).map((x) => h('li', {}, h('small', {}, new Date(x.at).toLocaleTimeString()), ' ', h('b', {}, x.who), ` ${x.what} `, x.url ? h('a', { href: x.url, target: '_blank' }, 'tx') : null)))));
+    a?.storage ? h('p', { class: 'warn' }, `⚠ ${a.storage}`) : null,
+    h('p', { class: 'dim' }, 'Each receipt links its transaction. ✗ marks an action that failed onchain: nothing was spent or won.'),
+    h('ul', { class: 'acts' }, ...(a?.acts ?? []).map((x) => h('li', { class: x.failed ? 'failed' : '' }, h('small', {}, new Date(x.at).toLocaleTimeString()), ' ', x.failed ? h('b', { class: 'bad' }, '✗ ') : null, h('b', {}, x.who), ` ${x.what} `, x.url ? h('a', { href: x.url, target: '_blank' }, 'tx') : null)))));
 }
 
 /** The How to play sheet, from the nav or the title screen. */
