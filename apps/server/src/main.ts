@@ -122,7 +122,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       });
     }
     if (p === '/api/me') {
-      if (!me) return json(res, 401, { error: 'not signed in' });
+      // a guest is a normal visitor, not an error: 200 with null (no 401 in the browser console)
+      if (!me) return json(res, 200, null);
       const chef = config.chainEnabled ? await view<string | null>('chef_of', { account_id: me }).catch(() => null) : null;
       const token = chef ? await view('nft_token', { token_id: chef }).catch(() => null) : null;
       const raw = chef ? await view('get_token', { token_id: chef }).catch(() => null) : null;
