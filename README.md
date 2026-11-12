@@ -1,5 +1,7 @@
 # Sushi Sabotage
 
+Part of the NEAR Arcade submission for NEAR HACKATHON (https://arcade.lopeselio.online, [github.com/lopeselio/near-arcade](https://github.com/lopeselio/near-arcade)); the author's other submission is Signalfire ([github.com/lopeselio/signalfire](https://github.com/lopeselio/signalfire)).
+
 A three-minute sushi kitchen race for 1–4 chefs, in the browser. You cook the same orders as your rivals. You can also wreck their dishes while they cook: drop a wasabi bomb in a rival's pan, swap the fish on their plate, dull their knives. They see the effect, not who did it. When the shift ends, everyone accuses someone. Then the sabotage log, sealed onchain as it happened, is opened and checked by the contract.
 
 The rival chefs are AI agents with their own NEAR accounts. They pay entry fees, buy sabotage cards from the Fixer (another agent), and pay a Scout agent for reports on the leader. Every chef is an NFT that holds its own purse, cards and record.
@@ -11,7 +13,7 @@ Built for NEAR HACKATHON (Nov 2026). Tracks: **Games With Real Economies**, **Pr
 
 ## Try it (do X, see Y)
 
-Hosted demo: https://sushi.lopeselio.online/ (Azure Container Apps; also at https://sushi-sabotage.happyflower-1d86c59e.northeurope.azurecontainerapps.io/), also inside the NEAR Arcade at https://near-arcade.vercel.app/ next to our other NEAR games. Locally:
+Hosted demo: **https://sushi.lopeselio.online/** (Azure Container Apps), also in the NEAR Arcade at https://arcade.lopeselio.online/. Health: [`/api/status`](https://sushi.lopeselio.online/api/status) shows the deployed version, the contract's free storage NEAR and how long it lasts, and every agent's balance; `warnings` is empty when all is well. Locally:
 
 ```bash
 pnpm install
@@ -54,15 +56,33 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - every seal and its opening (salt included), and the accusations;
    - the signed NEAR AI lines.
 
-   Check any finished match yourself with no keys: `pnpm verify <matchId>`. It fetches the bundle and the contract's record, then checks the seed against its committed hash, every seal against its opening, re-runs the shift from the input log, and compares the final scores with the contract:
+   Check any finished match yourself with no keys: `pnpm verify <matchId>` (after `pnpm install`). It fetches the bundle from the hosted game and the contract's record, then checks the seed against its committed hash, every seal against its opening, re-runs the shift from the input log, and compares the final scores with the contract. A known-good hosted match, a guest solo shift settled on 2026-11-12 (run against https://sushi.lopeselio.online the same day):
 
    ```
-   ✓ seed matches the hash committed at create_match
-   ✓ rules version and difficulty match what the seed committed to  rules v2, AI chefs normal
+   $ pnpm verify m-mwdktpbw-5271a2
+   match m-mwdktpbw-5271a2 — Judge Guest, Kenji, Mei, Hana
+
+   ✓ the contract has this match
+   ✓ the contract settled it
+   ✓ seed matches the hash committed at create_match  b1becd900b805749
+   ✓ the sim setup uses that seed
+   ✓ rules version and difficulty match what the seed committed to  rules v3, AI chefs normal
+   ✓ chef upgrades in the setup are the ones the contract recorded at create_match  none
+   ✓ the 4 seals in the bundle are the ones posted onchain
    ✓ every opening hashes to its seal
-   ✓ replaying the input log reaches the recorded end state
-   ✓ final scores from the replay match the contract  [700, 249, 190]
+   ✓ replaying the input log reaches the recorded end state  2744bf05a9709d80
+   ✓ the replay casts exactly the 4 sealed sabotages, in order
+   ✓ final scores from the replay match the contract  [-105, 167, 74, 60]
+
+   unranked: no entry fees
+   1 AI line(s), 1 signed by the NEAR AI enclave (signer 0xfdbd7952498b333206f360d71d97a1e0961e8ddf)
+
+   all checks passed
    ```
+
+   - Any other match: pick an id from [`/api/matches`](https://sushi.lopeselio.online/api/matches) (the 20 newest; the AI league adds one every 15 minutes) or from a results screen.
+   - RPCs: the contract is read through intea, drpc and fastnear in turn; a rate-limited endpoint (429) is skipped and the list retried after a pause. `--rpc https://…` puts your own endpoint first (repeat it or comma-separate several). If nothing answers you get one line naming each endpoint tried. Other options: `--host` (default the hosted game), `--contract`.
+   - AI-league rounds are pruned from contract storage 12 h after they start (see "Deploying"); verifying an older league round says so and links its transactions. Player shifts are never pruned.
 7. **Multiplayer.**
    - **Create room** gives you a 4-letter code. Open a second browser window, enter the code and press **Join**.
    - The host can **Add AI chef** and pick the **AI chefs** level (Easy / Normal / Hard); the other players see it. Everyone presses **Ready**. A player who leaves mid-shift is taken over by an AI chef at that level.
@@ -90,6 +110,8 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - pay Scout Nori 5 ryo for a report on the current leader.
 
    A scouted leader becomes that AI chef's preferred sabotage target in the next shift.
+
+   Each receipt links its transaction. A league result (winner, pot) is listed only once `settle_match` went through. An action that failed onchain is marked **✗** with the reason in words (for example "the contract is out of storage NEAR"), and nothing was spent or won. If the contract is short of storage NEAR, a warning sits above the receipts.
 
 ## How it works
 
@@ -143,25 +165,29 @@ tools/blender     bpy scripts that build every 3D model (.glb) and its preview: 
 
 ```bash
 pnpm --filter @sushi/rules test     # sim, sabotage, accusations, replay determinism, market, hints, difficulty, frozen v1 and v2 replays, chef upgrades
-pnpm contract:test                   # 34 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties, NEP-245, energy, upgrades, treasury, migration
+pnpm contract:test                   # 36 contract tests: NFTs, transfers, offers, caps, seals, settlement, royalties, NEP-245, energy, upgrades, treasury, migration, pruning
 pnpm sim 10                          # headless AI-only shifts: balance check
 pnpm balance 400                     # a reference human vs 3 AI chefs at v1 / easy / normal / hard: win rate, dishes, sabotages
 pnpm verify <matchId>                # re-run a finished match and check it against the contract (and its chef upgrades, rules v3)
 pnpm --filter @sushi/server e2e      # the whole signed-in player flow on testnet with a fresh faucet account
+pnpm --filter @sushi/server test     # budget pacing, storage runway, pruning policy, readable chain errors
 ```
+
+The e2e chefs are named "E2E Chef"; they stay on the contract's board but the game's leaderboard leaves them out.
 
 ## Deploying
 
 - **Contract:** `pnpm contract:build`, then `near contract deploy sushi-sabotage.testnet use-file contracts/kitchen/target/near/sushi_sabotage_kitchen.wasm with-init-call new json-args '{"owner":"sushi-sabotage.testnet","referee":"sushi-sabotage-ref.testnet"}' …`.
 - **Agents:** `pnpm --filter @sushi/server setup:agents`. It creates the six agent accounts with function-call keys, registers them, approves fees and mints the 20 scrolls. It is idempotent.
 - **Hosting:** `scripts/deploy-azure.sh`. One Docker image runs on Azure Container Apps (one replica: rooms live in memory); the server serves the web app. `scripts/azure-storage.sh` mounts an Azure Files share at `/data`, so proof bundles survive restarts and redeploys.
+- **Contract storage:** every stored byte locks 0.00001 NEAR, and a settled match is about 1.5 KB. The referee prunes AI-league rounds 12 h after they start (`prune_matches`, every 30 minutes; `PRUNE=0` turns it off), so league storage stays at about 0.7 NEAR while player matches are kept. `/api/status` → `contract` shows the free NEAR, growth per day, the run-out date and the top-up needed to last until `HOSTED_UNTIL` (default 2026-11-25). The server logs `ALERT:` and adds a warning there when it falls short; top up by sending NEAR to `sushi-sabotage.testnet`.
 - **Upgrading the contract:** `near contract deploy sushi-sabotage.testnet use-file … without-init-call …` when the state layout is unchanged, then `mt_reindex_supply` once if card supply needs recounting. The energy/upgrades release changed the root layout and was deployed with `… with-init-call migrate json-args '{}' …` ([tx](https://testnet.nearblocks.io/txns/E9LsipP6meKdsNRBUjhMarDZ7weQK8XAvzkUPqeHZn7U)); `migrate` is tested against the live testnet state bytes and refuses to run twice.
 
 ## Lineage, reuse and disclosures
 
 - **Our earlier game.** Recipes, ingredient chains and the chef/session/leaderboard idea come from **Sushi Bonks** (Unity, Monad testnet: https://github.com/IntoTheVerse/sushi-nads). Nothing from it is reused as code. This NEAR version is a new codebase written in the hackathon window: three.js client, TypeScript server and rules, Rust contract, Blender scripts.
 - **Genre.** The station rules (cut, cook, burn, plate, deliver) follow the kitchen-game genre. We studied a Unity Netcode course project for netcode structure only; none of its code or assets are included.
-- **Other projects.** Sushi Sabotage is independent of our other NEAR HACKATHON projects (Bazaar of Liars, Realm Ledger, Parkwright). It has its own repo, contract, rules, art and server, and no shared code. They're meant to sit together in one arcade launcher.
+- **The NEAR Arcade.** Sushi Sabotage is one of the nine games in the NEAR Arcade submission (https://arcade.lopeselio.online, [github.com/lopeselio/near-arcade](https://github.com/lopeselio/near-arcade)). It has its own repo, contract, rules, art and server. The author's other submission is Signalfire ([github.com/lopeselio/signalfire](https://github.com/lopeselio/signalfire)).
 - **Libraries:**
   - three.js
   - near-api-js
