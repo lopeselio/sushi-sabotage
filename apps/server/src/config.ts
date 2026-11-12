@@ -7,7 +7,8 @@ const env = (k: string, d = ''): string => process.env[k] ?? d;
 export const config = {
   port: Number(env('PORT', '8787')),
   network: env('NEAR_NETWORK', 'testnet'),
-  rpcUrl: env('NEAR_RPC_URL', 'https://test.rpc.fastnear.com'),
+  // the public fastnear endpoints rate-limit (429) most calls; chain.ts fails over to the others
+  rpcUrl: env('NEAR_RPC_URL', 'https://testnet-rpc.intea.rs'),
   contract: env('CONTRACT_ID', 'sushi-sabotage.testnet'),
   referee: env('REFEREE_ID', 'sushi-sabotage-ref.testnet'),
   /** pays gas for players' meta-transactions (NEP-366), relayed by better-near-auth */
