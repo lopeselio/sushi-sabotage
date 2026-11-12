@@ -424,3 +424,10 @@ code { font-size: 12px; color: var(--dim); }
 @media (min-width: 721px) and (max-width: 1400px) {
   .h-bl { bottom: calc(var(--hand-h) + 20px); max-width: 300px; }
 }
+/* touch: the Street button (street overview) sits above Chop */
+.tcol { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-left: 10px; }
+.tcol .tbtn.chop { margin-left: 0; }
+.tbtn.act { font-size: 16px; }
+.tbtn.view { width: 56px; height: 56px; flex-direction: column; gap: 0; padding: 0; font-size: 20px; line-height: 1; }
+.tbtn.view small { font-size: 11px; font-weight: 800; }
+.tbtn.view.on { background: var(--lantern); color: #2a1406; }
