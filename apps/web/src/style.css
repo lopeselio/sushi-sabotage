@@ -444,3 +444,13 @@ kbd.tap { background: var(--lantern); color: #2a1406; border-color: #ffd1a0; fon
   .h-handtop { font-size: 12px; }
   .h-row { font-size: 12px; }
 }
+/* phones: the top bar folds its links into a Menu; sound stays in the bar */
+.nav .mute { flex: none; background: none; border: 0; font-size: 15px; padding: 8px 10px; min-width: 40px; min-height: 40px; }
+.nav-menu { display: none; }
+@media (max-width: 720px) {
+  .nav-menu { display: inline-flex; flex: none; min-height: 40px; padding: 8px 12px; font-size: 14px; background: var(--card-hi); border: 1px solid var(--line); }
+  .nav .mute { margin-left: auto; }
+  .nav-links { display: none; position: absolute; top: 100%; left: 8px; right: 8px; margin: 6px 0 0; flex-direction: column; gap: 2px; padding: 6px; background: var(--panel-solid); border: 1px solid var(--line-hi); border-radius: 14px; box-shadow: var(--shadow); overflow: visible; }
+  .nav.open .nav-links { display: flex; }
+  .nav-links button { font-size: 16px; padding: 12px 14px; min-height: 44px; justify-content: flex-start; color: var(--ink); }
+}

@@ -99,16 +99,28 @@ function fillSlot(id: string, el: HTMLElement | null): void {
 }
 function nav(): HTMLElement {
   const item = (id: string, label: string, fn: () => void): HTMLElement => h('button', { class: page === id ? 'on' : '', 'aria-current': page === id ? 'page' : undefined, onclick: fn }, label);
-  return h('nav', { class: 'nav' },
+  // On a phone the links fold into a Menu; the sound toggle stays in the bar.
+  const links = h('div', { class: 'nav-links', id: 'nav-links' },
+    item('title', 'Kitchen', title),
+    item('market', 'Night Market', market),
+    item('chef', 'My Chef', myChef),
+    item('board', 'Leaderboard', board),
+    item('agents', 'Agents', agents),
+    h('button', { onclick: () => { setOpen(false); howTo(); } }, 'How to play'));
+  const toggle = h('button', { class: 'nav-menu', 'aria-expanded': 'false', 'aria-controls': 'nav-links', onclick: () => setOpen(!el.classList.contains('open')) }, h('span', { 'aria-hidden': 'true' }, '☰'), ' Menu');
+  const outside = (e: Event): void => { if (!el.contains(e.target as Node)) setOpen(false); };
+  const setOpen = (open: boolean): void => {
+    el.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    if (open) document.addEventListener('pointerdown', outside); else document.removeEventListener('pointerdown', outside);
+  };
+  const el = h('nav', { class: 'nav' },
     h('button', { class: 'brand', onclick: title, 'aria-label': 'Sushi Sabotage: back to the kitchen' }, logo(true)),
-    h('div', { class: 'nav-links' },
-      item('title', 'Kitchen', title),
-      item('market', 'Night Market', market),
-      item('chef', 'My Chef', myChef),
-      item('board', 'Leaderboard', board),
-      item('agents', 'Agents', agents),
-      h('button', { onclick: howTo }, 'How to play'),
-      h('button', { class: 'mute', 'aria-label': 'Sound on/off', onclick: (e: Event) => { setMuted(!isMuted()); (e.currentTarget as HTMLElement).textContent = isMuted() ? '🔇' : '🔊'; } }, isMuted() ? '🔇' : '🔊')));
+    links,
+    h('button', { class: 'mute', 'aria-label': 'Sound on/off', onclick: (e: Event) => { setMuted(!isMuted()); (e.currentTarget as HTMLElement).textContent = isMuted() ? '🔇' : '🔊'; } }, isMuted() ? '🔇' : '🔊'),
+    toggle);
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && el.classList.contains('open')) { setOpen(false); toggle.focus(); } });
+  return el;
 }
 
 function walletBadge(): HTMLElement {
