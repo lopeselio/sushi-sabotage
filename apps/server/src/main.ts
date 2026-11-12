@@ -130,6 +130,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const econ = chef ? await view('get_chef', { chef }).catch(() => null) : null;
       return json(res, 200, { accountId: me, chef, token, raw, econ });
     }
+    if (p === '/api/owned') {
+      // the signed-in account's tokens (chef + recipe scrolls), via the server's RPC failover list
+      if (!me || !config.chainEnabled) return json(res, 200, []);
+      return json(res, 200, await view('nft_tokens_for_owner', { account_id: me, limit: 50 }).catch(() => []));
+    }
     if (p === '/api/economy') {
       // energy and upgrade prices (yoctoNEAR) and the treasury, straight from the contract
       return json(res, 200, config.chainEnabled ? await view('get_economy').catch(() => null) : null);
