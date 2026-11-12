@@ -56,6 +56,9 @@ pub const ACCUSE_WRONG: i64 = -10;
 pub const PRIZE_SHARES: [u64; 3] = [60, 30, 10];
 const MAX_SEATS: usize = 4;
 const MAX_SEALS: usize = 96;
+/// A settled match can be pruned from storage this long after it was created.
+pub const PRUNE_AFTER_NS: u64 = 12 * 3_600_000_000_000;
+const MAX_PRUNE: usize = 50;
 const MAX_NAME: usize = 20;
 const GAS_FOR_RESOLVE: Gas = Gas::from_tgas(15);
 const GAS_FOR_ON_TRANSFER: Gas = Gas::from_tgas(30);
@@ -245,6 +248,8 @@ pub enum Event {
     MatchGear { match_id: String, gear: Vec<Vec<u8>> },
     #[event_version("1.0.0")]
     TreasuryWithdrawn { to: AccountId, amount: near_sdk::json_types::U128 },
+    #[event_version("1.0.0")]
+    Pruned { match_ids: Vec<String> },
 }
 
 // NEP-171 events are emitted by hand in the standard's exact shape.
@@ -819,6 +824,30 @@ impl Kitchen {
         m.royalties = royalties;
         m.pot = 0;
         self.matches.insert(match_id, m);
+    }
+
+    /// Frees the storage of settled matches at least PRUNE_AFTER_NS old (referee only, up to 50 a
+    /// call). Every byte stored locks contract NEAR, and the AI league settles a match every 15
+    /// minutes; a pruned match's full record stays in its MatchCreated, Sealed and Settled events.
+    /// Unsettled, too-young and unknown ids are skipped. Returns the ids it pruned.
+    pub fn prune_matches(&mut self, match_ids: Vec<String>) -> Vec<String> {
+        self.only_referee();
+        require!(match_ids.len() <= MAX_PRUNE, "at most 50 matches a call");
+        let now = env::block_timestamp();
+        let mut pruned = vec![];
+        for id in match_ids {
+            let Some(m) = self.matches.get(&id) else { continue };
+            if !m.settled || now < m.created_ns.0.saturating_add(PRUNE_AFTER_NS) {
+                continue;
+            }
+            self.matches.remove(&id);
+            self.match_gear.remove(&id);
+            pruned.push(id);
+        }
+        if !pruned.is_empty() {
+            Event::Pruned { match_ids: pruned.clone() }.emit();
+        }
+        pruned
     }
 
     // ---------- views ----------
