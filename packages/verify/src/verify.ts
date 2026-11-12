@@ -2,13 +2,17 @@
 // it re-runs the shift from the public input log and compares everything with what the contract holds.
 //
 //   pnpm verify <matchId> [--host https://…] [--rpc https://…] [--contract sushi-sabotage.testnet]
+//
+// --rpc puts your endpoint first (repeat it or comma-separate several); the public testnet RPCs in
+// rpc.ts follow as fallbacks, and a rate-limited endpoint (429) is skipped and retried after a pause.
+import { RpcError, rpcList, viewCall } from './rpc.ts';
 import { gearToArray, replay, results, rulesOf, sealOf, sha256Hex, stateHash, type Accusation, type LogEntry, type Setup } from '@sushi/rules';
 
 const args = process.argv.slice(2);
 const opt = (k: string, d: string): string => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const id = args.find((a) => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
 const HOST = opt('host', 'https://sushi.lopeselio.online');
-const RPC = opt('rpc', 'https://rpc.testnet.near.org');
+const RPCS = rpcList(args.flatMap((a, i) => (a === '--rpc' && args[i + 1] ? [args[i + 1]] : [])));
 const CONTRACT = opt('contract', 'sushi-sabotage.testnet');
 if (!id) { console.error('usage: pnpm verify <matchId> [--host URL] [--rpc URL] [--contract ID]'); process.exit(2); }
 
@@ -20,15 +24,27 @@ interface Bundle {
 }
 interface ChainMatch { seed_hash: string; seals: string[]; settled: boolean; finals: number[]; ranks: number[]; payouts: number[]; royalties: number; ranked: boolean }
 
-async function view<T>(method: string, a: object): Promise<T> {
-  const res = await fetch(RPC, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT, method_name: method, args_base64: Buffer.from(JSON.stringify(a)).toString('base64') } }),
-  });
-  const j = (await res.json()) as { result?: { result: number[] }; error?: unknown };
-  if (!j.result) throw new Error(`RPC: ${JSON.stringify(j.error).slice(0, 200)}`);
-  return JSON.parse(Buffer.from(j.result.result).toString('utf8')) as T;
+const view = <T>(method: string, a: object): Promise<T> => viewCall<T>(RPCS, CONTRACT, method, a, 3, (m) => console.error(m));
+
+/** The proof bundle from the game server, with a readable error when it isn't there. */
+async function fetchBundle(): Promise<Bundle> {
+  const url = `${HOST}/api/match/${id}`;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      const j = (await res.json().catch(() => null)) as (Bundle & { error?: string }) | null;
+      // a bundle carries its own `error` (a chain call that failed for that match); a missing match has no id
+      if (res.status === 404 || (j && !j.id)) fail(`${url}: ${j?.error ?? 'not found'}. Pick a match id from ${HOST}/api/matches (or the README's example).`);
+      if (!res.ok || !j) throw new Error(`HTTP ${res.status}`);
+      if (j.error) console.log(`note: the game server recorded a chain error for this match: ${j.error.slice(0, 160)}\n`);
+      return j;
+    } catch (e) {
+      if (attempt >= 2) fail(`couldn't fetch the proof bundle from ${url}: ${(e as Error).message}`);
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
+  }
 }
+function fail(msg: string): never { console.error(`✗ ${msg}`); process.exit(2); }
 
 let failed = 0;
 const check = (ok: boolean, what: string, detail = ''): void => {
@@ -36,9 +52,8 @@ const check = (ok: boolean, what: string, detail = ''): void => {
   console.log(`${ok ? '✓' : '✗'} ${what}${detail ? `  ${detail}` : ''}`);
 };
 
-const bundle = (await (await fetch(`${HOST}/api/match/${id}`)).json()) as Bundle & { error?: string };
-if (bundle.error) { console.error(bundle.error); process.exit(2); }
-const chain = await view<ChainMatch | null>('get_match', { match_id: id });
+const bundle = await fetchBundle();
+const chain = await view<ChainMatch | null>('get_match', { match_id: id }).catch((e: Error) => fail(e instanceof RpcError ? e.message : `RPC: ${e.message}`));
 console.log(`match ${id} — ${bundle.setup.chefs.map((c) => c.name).join(', ')}\n`);
 
 check(!!chain, 'the contract has this match');
@@ -53,7 +68,7 @@ if (rv !== null) check(true, 'rules version and difficulty match what the seed c
 if (rv === null) { console.log(`\n${failed} check(s) FAILED`); process.exit(1); }
 if (rv >= 3) {
   // rules v3: each chef's upgrades, as the contract checked them against the NFT and recorded them
-  const recorded = await view<number[][] | null>('get_match_gear', { match_id: id }).catch(() => null);
+  const recorded = await view<number[][] | null>('get_match_gear', { match_id: id }).catch((e: Error) => fail(e.message));
   const played = bundle.setup.chefs.map((c) => gearToArray(c.gear));
   const none = played.every((g) => g.every((l) => l === 0));
   const same = recorded ? JSON.stringify(recorded) === JSON.stringify(played) : none;
