@@ -114,6 +114,9 @@ export abstract class Shift {
   toggleOverview(): void {
     this.scene.overview = !this.scene.overview;
     this.watcher?.action('view');
+    const btn = this.hud.querySelector('.tbtn.view');
+    btn?.classList.toggle('on', this.scene.overview);
+    btn?.setAttribute('aria-pressed', String(this.scene.overview));
   }
 
   cycleTarget(): void {
@@ -246,11 +249,8 @@ function touchPad(g: Shift): HTMLElement {
   stick.addEventListener('pointercancel', up);
   document.body.classList.add('touch-ui');
   const view = h('button', { class: 'tbtn view', 'aria-label': 'Street view: see all four kitchens', 'aria-pressed': 'false', onclick: (e: Event) => {
-    const b = e.currentTarget as HTMLElement;
-    b.blur();
+    (e.currentTarget as HTMLElement).blur();
     g.toggleOverview();
-    b.setAttribute('aria-pressed', String(g.isOverview));
-    b.classList.toggle('on', g.isOverview);
   } }, h('span', { 'aria-hidden': 'true' }, '👀'), h('small', {}, 'Street'));
   return h('div', { class: 'touch' }, stick, h('div', { class: 'tbtns' },
     h('button', { class: 'tbtn act', 'aria-label': 'Pick up or put down', onpointerdown: () => g.touchAct() }, 'Grab'),
