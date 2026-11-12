@@ -32,6 +32,7 @@ async function body<T>(req: IncomingMessage, max = 2_000_000): Promise<T> {
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as T;
 }
+const isTestChef = (name: string): boolean => /^e2e\b/i.test(name.trim());
 const cleanName = (n: unknown): string => String(n ?? '').replace(/[^A-Za-z0-9 _-]/g, '').trim().slice(0, 20) || 'Chef';
 
 const MIME: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.glb': 'model/gltf-binary', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
@@ -153,7 +154,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (reply.outcome.kind === 'accept') offer = await fixerOffer(chef, b.card, reply.outcome.price);
       return json(res, 200, { outcome: reply.outcome, list: reply.list, line: { who: reply.line.who, text: reply.line.text, signed: !!reply.line.signature }, offer: offer && { ...offer, url: explorerTx(offer.tx) } });
     }
-    if (p === '/api/leaderboard') return json(res, 200, config.chainEnabled ? await view('leaderboard', { limit: 20 }).catch(() => []) : []);
+    if (p === '/api/leaderboard') {
+      // the end-to-end test (e2e-player.ts) mints chefs named "E2E Chef" and plays ranked shifts with
+      // them; they stay on the contract's board but aren't players, so the game's board leaves them out
+      const rows = config.chainEnabled ? await view<{ chef: string; name: string; best: number }[]>('leaderboard', { limit: 40 }).catch(() => []) : [];
+      return json(res, 200, rows.filter((r) => !isTestChef(r.name)).slice(0, 20));
+    }
     if (p === '/api/agents') {
       const [budgets, st] = await Promise.all([agentBudgets(), config.chainEnabled ? chainStatus().catch(() => null) : null]);
       return json(res, 200, {
