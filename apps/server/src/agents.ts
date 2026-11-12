@@ -1,5 +1,5 @@
 import { CARD_INFO, CARDS, haggle, listPrice, type BotSkill, type Card, type HaggleOutcome } from '@sushi/rules';
-import { call, view } from './chain.ts';
+import { call, readableError, view } from './chain.ts';
 import { config, hasKey } from './config.ts';
 import { voice, type SignedLine } from './nearai.ts';
 import { budgetOf, type AgentPolicyView, type Budget } from './budget.ts';
@@ -50,10 +50,19 @@ export async function agentChef(a: AgentDef): Promise<string | null> {
 
 // ---------- receipts feed (what the agents did, for the UI) ----------
 
-export interface AgentAct { at: number; who: string; what: string; tx?: string }
-const acts: AgentAct[] = kvGet<AgentAct[]>('acts', []);
-export function logAct(who: string, what: string, tx?: string): void {
-  acts.unshift({ at: Date.now(), who, what, tx });
+export interface AgentAct { at: number; who: string; what: string; tx?: string; failed?: boolean }
+// receipts saved by older builds: a cut-off JSON error becomes words, and a league "win" that has no
+// settle transaction (the chain call failed) is shown as what it was, a shift nothing recorded
+const acts: AgentAct[] = kvGet<AgentAct[]>('acts', []).map((a) => {
+  const err = /^(couldn't act|round failed): (.*)$/s.exec(a.what);
+  if (err) return { ...a, what: `${err[1]}: ${readableError(new Error(err[2]))}`, failed: true };
+  const won = /^(ranked|friendly) shift (\S+): .* wins with/.exec(a.what);
+  if (won && !a.tx) return { ...a, what: `${won[1]} shift ${won[2]} played but not recorded onchain, no fees or prizes moved`, failed: true };
+  return a;
+});
+/** A receipt for the Agents page. Only things that happened onchain carry a tx; failures say so. */
+export function logAct(who: string, what: string, tx?: string, failed = false): void {
+  acts.unshift({ at: Date.now(), who, what, tx, ...(failed ? { failed } : {}) });
   acts.length = Math.min(acts.length, 60);
   kvSet('acts', acts);
 }
@@ -151,7 +160,7 @@ export async function agentEconomyTick(): Promise<void> {
         logAct(a.name, `paid Scout Nori 5 ryo for a report on ${top.name}`, r.tx);
       }
     } catch (e) {
-      logAct(a.name, `couldn't act: ${(e as Error).message.slice(0, 120)}`);
+      logAct(a.name, `couldn't act: ${readableError(e)}`, undefined, true);
     }
   }
 }
