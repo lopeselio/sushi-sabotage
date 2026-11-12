@@ -1,6 +1,7 @@
 import { replay, type Result } from '@sushi/rules';
 import { CHEF_AGENTS, agentBudgets, logAct } from './agents.ts';
 import { affordableRounds, pickLineup, rankedDue } from './budget.ts';
+import { readableError } from './chain.ts';
 import { config } from './config.ts';
 import { ChainMatch, planSeats, type SeatPlan } from './match.ts';
 import { kvGet, kvSet } from './store.ts';
@@ -36,7 +37,6 @@ export async function leagueRound(): Promise<{ id: string; ranked: boolean; resu
     const due = rankedDue(now, kvGet<number>('leagueLastRanked', 0), affordableRounds(budgets));
     const plan = due ? pickLineup(budgets).map((k) => ({ name: CHEF_AGENTS[k].name, kind: 'bot' as const, agent: CHEF_AGENTS[k] })) : lineup(round);
     const { seats, fee } = await planSeats(plan, { league: true, friendly: !due });
-    if (fee > 0) kvSet('leagueLastRanked', now);
     if (!seats.some((s) => s.chef)) return null;
     // no difficulty: league shifts stay on rules v1, each AI chef at its persona skill (Kenji hard,
     // Mei and Hana normal, Tomo easy), exactly the bots the league has always played with
@@ -48,10 +48,17 @@ export async function leagueRound(): Promise<{ id: string; ranked: boolean; resu
     await settled;
     const winner = [...results].sort((a, b) => a.rank - b.rank)[0];
     const tx = match.rec.txs.find((t) => t.what === 'settle_match')?.hash;
-    logAct('League', `${fee ? 'ranked' : 'friendly'} shift ${match.id}: ${winner?.name} wins with ${winner?.final}${fee ? ` (pot ${fee * seats.length} ryo)` : ''}`, tx);
-    return { id: match.id, ranked: fee > 0, results };
+    // a win, a pot and fees are claimed only once settle_match went through; otherwise nothing moved
+    if (match.rec.settled) {
+      if (fee > 0) kvSet('leagueLastRanked', now);
+      logAct('League', `${fee ? 'ranked' : 'friendly'} shift ${match.id}: ${winner?.name} wins with ${winner?.final}${fee ? ` (pot ${fee * seats.length} ryo)` : ''}`, tx);
+    } else {
+      const why = match.rec.error ? readableError(new Error(match.rec.error.replace(/^\w+: /, ''))) : 'not settled';
+      logAct('League', `${fee ? 'ranked' : 'friendly'} shift ${match.id} played but not recorded onchain, no fees or prizes moved: ${why}`, undefined, true);
+    }
+    return { id: match.id, ranked: fee > 0 && match.rec.settled, results };
   } catch (e) {
-    logAct('League', `round failed: ${(e as Error).message.slice(0, 160)}`);
+    logAct('League', `round failed: ${readableError(e)}`, undefined, true);
     return null;
   } finally {
     running = false;
