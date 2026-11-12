@@ -86,7 +86,7 @@ export abstract class Shift {
     if (KEYS_ACT.includes(e.code)) this.send({ act: true });
     else if (KEYS_CHOP.includes(e.code)) this.send({ chop: true });
     else if (e.code === 'Tab' || e.code === 'KeyQ') this.cycleTarget();
-    else if (e.code === 'KeyV') { this.scene.overview = !this.scene.overview; this.watcher?.action('view'); }
+    else if (e.code === 'KeyV') this.toggleOverview();
     else if (e.code === 'KeyH') this.toggleHints();
     else if (e.code === 'KeyM') { setMuted(!isMuted()); this.ui.syncMute(); }
     else if (/^Digit[1-6]$/.test(e.code)) this.playCard(CARDS[Number(e.code.slice(5)) - 1]);
@@ -109,6 +109,12 @@ export abstract class Shift {
   }
   touchAct(): void { this.send({ act: true }); }
   touchChop(): void { this.send({ chop: true }); }
+
+  /** The street overview: all four kitchens at once (V, or the Street button on touch). */
+  toggleOverview(): void {
+    this.scene.overview = !this.scene.overview;
+    this.watcher?.action('view');
+  }
 
   cycleTarget(): void {
     const n = this.names.length;
@@ -217,8 +223,13 @@ export abstract class Shift {
   }
 }
 
+/** A touch screen (or ?touch for testing): on-screen controls and touch wording. */
+export function isTouch(): boolean {
+  return matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch');
+}
+
 function touchPad(g: Shift): HTMLElement {
-  if (!matchMedia('(pointer: coarse)').matches && !new URLSearchParams(location.search).has('touch')) return h('div');
+  if (!isTouch()) return h('div');
   const stick = h('div', { class: 'stick' }, h('i'));
   const knob = stick.firstChild as HTMLElement;
   let id: number | null = null;
@@ -234,7 +245,16 @@ function touchPad(g: Shift): HTMLElement {
   stick.addEventListener('pointerup', up);
   stick.addEventListener('pointercancel', up);
   document.body.classList.add('touch-ui');
-  return h('div', { class: 'touch' }, stick, h('div', { class: 'tbtns' }, h('button', { class: 'tbtn act', 'aria-label': 'Pick up or put down', onpointerdown: () => g.touchAct() }, 'E'), h('button', { class: 'tbtn chop', 'aria-label': 'Chop', onpointerdown: () => g.touchChop() }, 'Chop')));
+  const view = h('button', { class: 'tbtn view', 'aria-label': 'Street view: see all four kitchens', 'aria-pressed': 'false', onclick: (e: Event) => {
+    const b = e.currentTarget as HTMLElement;
+    b.blur();
+    g.toggleOverview();
+    b.setAttribute('aria-pressed', String(g.isOverview));
+    b.classList.toggle('on', g.isOverview);
+  } }, h('span', { 'aria-hidden': 'true' }, '👀'), h('small', {}, 'Street'));
+  return h('div', { class: 'touch' }, stick, h('div', { class: 'tbtns' },
+    h('button', { class: 'tbtn act', 'aria-label': 'Pick up or put down', onpointerdown: () => g.touchAct() }, 'Grab'),
+    h('div', { class: 'tcol' }, view, h('button', { class: 'tbtn chop', 'aria-label': 'Chop', onpointerdown: () => g.touchChop() }, 'Chop'))));
 }
 
 // ---------- solo: the sim runs in this browser ----------
