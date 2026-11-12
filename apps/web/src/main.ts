@@ -60,7 +60,7 @@ async function boot(): Promise<void> {
   idleLoop();
   cfg = await api<ServerConfig>('/config').catch(() => null);
   if (cfg) setContract(cfg.contract);
-  me = await api<Me>('/me').catch(() => null); // signed in if the session cookie is still good
+  me = await api<Me | null>('/me').catch(() => null); // null for a guest; signed in if the session cookie is still good
   title();
   if (!onboarded()) welcome(() => solo(3, 'easy'));
 }
@@ -83,7 +83,7 @@ let page = 'title';
 const chefHooks: ChefHooks = {
   me: () => me,
   refresh: async () => {
-    me = await api<Me>('/me').catch(() => me);
+    me = await api<Me | null>('/me').catch(() => me);
     if (page === 'chef') void myChef();
     else if (page === 'title') title();
     else fillSlot('results-cta', lastCta());
@@ -119,7 +119,8 @@ function walletBadge(): HTMLElement {
 async function doSignIn(): Promise<void> {
   try {
     await signIn();
-    me = await api<Me>('/me');
+    me = await api<Me | null>('/me');
+    if (!me) throw new Error('signed in, but the session cookie did not stick: allow cookies for this site and try again');
     toast(`Signed in as ${me.accountId}`, 'good');
     if (!me.chef) myChef(); else title();
   } catch (e) { toast((e as Error).message, 'bad'); }
@@ -361,7 +362,7 @@ function results(r: ResultsMsg & { names: string[]; you: number; solo?: boolean;
   const recorded = r.recorded ?? !!me?.chef;
   lastCta = () => resultsCta(chefHooks, recorded, !!r.noEnergy);
   fillSlot('results-cta', lastCta());
-  if (me) void api<Me>('/me').then((m) => { me = m; if (page === 'results') fillSlot('results-cta', lastCta()); }).catch(() => undefined);
+  if (me) void api<Me | null>('/me').then((m) => { me = m; if (page === 'results') fillSlot('results-cta', lastCta()); }).catch(() => undefined);
 }
 
 let lastShiftRecorded = false;
@@ -424,7 +425,7 @@ async function market(): Promise<void> {
         say('Wallet', 'Approve the purchase in your wallet (no gas: the game relays it).', 'sys');
         const res = await call('accept_offer', { offer_id: r.offer.offerId });
         say('Receipt', `You bought ${CARD_INFO[card].name} for ${r.outcome.price} ryo${res.gasless ? ', gas paid by the game' : ''}. Tx ${res.tx.slice(0, 10)}…`, 'sys');
-        me = await api<Me>('/me');
+        me = await api<Me | null>('/me');
         round = 0;
       }
     } catch (e) { say('Error', (e as Error).message, 'sys'); }
