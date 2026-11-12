@@ -464,3 +464,28 @@ kbd.tap { background: var(--lantern); color: #2a1406; border-color: #ffd1a0; fon
 @media (max-height: 640px) {
   .hot-connector-popup .bz-close { position: fixed; top: 10px; right: 10px; margin: 0; z-index: 2; }
 }
+/* phone held sideways: stick and buttons in the bottom corners beside the card row, a compact coach */
+@media (max-height: 500px) and (orientation: landscape) {
+  .touch-ui .hud-root { --hand-h: 0px; }
+  .touch-ui .touch { bottom: var(--gut); padding: 0 var(--gut); }
+  .touch-ui .h-hand { width: min(560px, calc(100% - 2 * 156px)); }
+  .touch-ui .h-bl { bottom: calc(var(--gut) + 140px); max-width: 260px; }
+  .touch-ui .h-hint { top: auto; bottom: calc(var(--gut) + 116px); left: 50%; transform: translateX(-50%); width: max-content; }
+  .touch-ui .tbtn { width: 60px; height: 60px; }
+  .touch-ui .tbtn.view { width: 50px; height: 50px; }
+  .touch-ui .tcol { gap: 6px; }
+  .touch-ui .stick { width: 100px; height: 100px; } .touch-ui .stick i { left: 28px; top: 28px; }
+  .touch-ui .h-tr { width: 168px; gap: 5px; }
+  .touch-ui .h-clock { font-size: 22px; padding: 6px 10px; min-width: 0; }
+  .touch-ui .h-btn { width: 36px; height: 36px; }
+  .touch-ui .h-row { padding: 4px 8px; font-size: 12px; }
+  .touch-ui .h-row b { font-size: 13px; }
+  .touch-ui .h-row em { display: none; }
+  .touch-ui .h-orders { max-width: calc(100% - 200px); }
+  .touch-ui .ticket { width: 150px; padding: 6px 8px; }
+  .touch-ui .coach { width: 300px; padding: 8px 10px; }
+  .touch-ui .coach h3 { font-size: 14px; margin: 4px 0 2px; }
+  .touch-ui .coach p { font-size: 12.5px; margin-bottom: 4px; line-height: 1.4; }
+  .touch-ui .coach.kitchen p:not(.c-live), .touch-ui .coach .c-check, .touch-ui .coach .c-wait { display: none; }
+  .touch-ui .c-row { margin-top: 4px; } .touch-ui .c-row button { padding: 4px 8px; font-size: 12px; }
+}
