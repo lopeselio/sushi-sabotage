@@ -100,3 +100,27 @@ function failure(outcome: unknown): string | undefined {
   const m = /panicked at[^"]*?: ?([^"\\]+)|Smart contract panicked: ([^"\\]+)/.exec(JSON.stringify(outcome ?? ''));
   return m?.[1] ?? m?.[2];
 }
+
+// NEAR Connect's wallet sheet closes only when you tap outside it, which on a phone (where the
+// sheet fills the bottom of the screen) nobody finds. Give it a clear close button. It sits in the
+// sheet's backdrop, just above the sheet, so a tap on it is a tap outside: the picker cancels itself.
+function addSheetClose(popup: Element): void {
+  const box = popup.querySelector('.modal-container');
+  if (!box || box.querySelector('.bz-close')) return;
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'bz-close';
+  x.setAttribute('aria-label', 'Close the wallet list');
+  x.textContent = '×';
+  box.append(x);
+}
+if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+  // watch only body's own children for a new sheet, then that sheet for its re-renders
+  new MutationObserver((records) => {
+    for (const r of records) for (const n of r.addedNodes) {
+      if (!(n instanceof Element) || !n.classList.contains('hot-connector-popup')) continue;
+      addSheetClose(n);
+      new MutationObserver(() => addSheetClose(n)).observe(n, { childList: true });
+    }
+  }).observe(document.body, { childList: true });
+}
