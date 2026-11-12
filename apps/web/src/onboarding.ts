@@ -38,7 +38,7 @@ export function welcome(play: () => void): void {
       h('div', { class: 'w-art', 'aria-hidden': 'true' }, c.art),
       h('h2', {}, c.title),
       h('p', {}, ...c.body),
-      h('div', { class: 'dots', role: 'img', 'aria-label': `Card ${i + 1} of ${WELCOME.length}` }, ...WELCOME.map((_, k) => h('i', { class: k === i ? 'on' : '', onclick: () => { i = k; render(); } }))),
+      h('div', { class: 'w-dots', role: 'img', 'aria-label': `Card ${i + 1} of ${WELCOME.length}` }, ...WELCOME.map((_, k) => h('i', { class: k === i ? 'on' : '', onclick: () => { i = k; render(); } }))),
       h('div', { class: 'm-row' },
         h('button', { class: 'link', onclick: () => finish(false) }, last ? 'Look around first' : 'Skip'),
         h('span', { class: 'grow' }),
