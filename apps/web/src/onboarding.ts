@@ -1,7 +1,7 @@
 import { CARD_INFO, CARDS, COUNTERS, RECIPES, SCORE, SPAWN, isHeat, type SimEvent } from '@sushi/rules';
 import { sfx } from './audio.ts';
 import { CHIP, CHIP_LABEL } from './food.ts';
-import type { Shift, ShiftWatcher } from './game.ts';
+import { isTouch, type Shift, type ShiftWatcher } from './game.ts';
 import { h, openModal, saved } from './ui.ts';
 
 // First-run experience: welcome cards on the first visit, a hands-on walkthrough in your first solo
@@ -16,14 +16,19 @@ export const markTutorialDone = (): void => saved.set(KEYS.tutorialDone, '1');
 export function resetTutorial(): void { saved.del(KEYS.onboarded); saved.del(KEYS.tutorialDone); }
 
 const kbd = (k: string): HTMLElement => h('kbd', {}, k);
+/** A touch-screen button's name, styled like a key so the two read the same. */
+const btn = (k: string): HTMLElement => h('kbd', { class: 'tap' }, k);
+/** The key on a keyboard, the on-screen button on a touch screen. */
+const key = (k: string, tap: string): HTMLElement => (isTouch() ? btn(tap) : kbd(k));
+const press = (): string => (isTouch() ? 'tap ' : 'press ');
 
 // ---------- welcome cards ----------
 
-const WELCOME: { art: string; title: string; body: (Node | string)[] }[] = [
-  { art: '🍣', title: 'A sushi race with a knife in your back', body: ['Three minutes, up to four chefs, the same orders for everyone. Serve the most dishes and score the most points. Your rivals are AI chefs with their own NEAR wallets, or friends in a room.'] },
-  { art: '🔪', title: 'Cook → plate → deliver', body: ['Grab ingredients from the crates, cook them in the rice cooker or pan, chop them on a board (', kbd('F'), '), put them on a plate and carry it to the hatch. Tickets in the top-left say what each order needs. Watch the pan: seared fish burns.'] },
-  { art: '🌶️', title: 'Sabotage, quietly', body: ['Every dish you serve lights a Mischief pip. Spend pips on cards (', kbd('1'), '–', kbd('6'), '): a wasabi bomb in a rival’s pan, a dull knife, soy on their floor. They see what happened, never who did it.'] },
-  { art: '🔍', title: 'Whodunit, and the chain keeps score', body: ['When the clock runs out, accuse whoever hit you: right is +40, wrong is −10. Every card was sealed on NEAR when it was played. Now the seals open and the contract checks them. Guests play free; a chef NFT is optional.'] },
+const WELCOME: { art: string; title: string; body: () => (Node | string)[] }[] = [
+  { art: '🍣', title: 'A sushi race with a knife in your back', body: () => ['Three minutes, up to four chefs, the same orders for everyone. Serve the most dishes and score the most points. Your rivals are AI chefs with their own NEAR wallets, or friends in a room.'] },
+  { art: '🔪', title: 'Cook → plate → deliver', body: () => ['Grab ingredients from the crates, cook them in the rice cooker or pan, chop them on a board (', key('F', 'Chop'), '), put them on a plate and carry it to the hatch. Tickets in the top-left say what each order needs. Watch the pan: seared fish burns.'] },
+  { art: '🌶️', title: 'Sabotage, quietly', body: () => ['Every dish you serve lights a Mischief pip. Spend pips on cards (', ...(isTouch() ? ['tap one at the bottom'] : [kbd('1'), '–', kbd('6')]), '): a wasabi bomb in a rival’s pan, a dull knife, soy on their floor. They see what happened, never who did it.'] },
+  { art: '🔍', title: 'Whodunit, and the chain keeps score', body: () => ['When the clock runs out, accuse whoever hit you: right is +40, wrong is −10. Every card was sealed on NEAR when it was played. Now the seals open and the contract checks them. Guests play free; a chef NFT is optional.'] },
 ];
 
 /** The welcome cards. `play` starts the first shift (the walkthrough runs in it). */
@@ -37,7 +42,7 @@ export function welcome(play: () => void): void {
     card.replaceChildren(
       h('div', { class: 'w-art', 'aria-hidden': 'true' }, c.art),
       h('h2', {}, c.title),
-      h('p', {}, ...c.body),
+      h('p', {}, ...c.body()),
       h('div', { class: 'w-dots', role: 'img', 'aria-label': `Card ${i + 1} of ${WELCOME.length}` }, ...WELCOME.map((_, k) => h('i', { class: k === i ? 'on' : '', onclick: () => { i = k; render(); } }))),
       h('div', { class: 'm-row' },
         h('button', { class: 'link', onclick: () => finish(false) }, last ? 'Look around first' : 'Skip'),
@@ -61,25 +66,34 @@ type Flag = 'move' | 'grab' | 'plate' | 'heat' | 'chop' | 'build' | 'serve' | 't
 type Skill = 'grab' | 'plate' | 'heat' | 'chop' | 'build' | 'serve';
 
 /** The six things your first dish teaches, in whatever order the hint planner asks for them. */
-const SKILLS: Record<Skill, { label: string; title: string; body: (Node | string)[] }> = {
-  plate: { label: 'Plate', title: 'Grab a plate', body: ['Plates stack on the rack by the right wall (the yellow arrow). Walk up to it and press ', kbd('E'), ' (or ', kbd('Space'), ').'] },
-  grab: { label: 'Ingredient', title: 'Grab an ingredient', body: ['Walk up to the crate the yellow arrow points at and press ', kbd('E'), ' to pick it up. You carry one thing at a time.'] },
-  heat: { label: 'Cook', title: 'Cook it', body: ['Raw rice goes in the rice cooker; sliced fish or lobster in the pan. Press ', kbd('E'), ' at the station. It cooks by itself. Take it off before it burns.'] },
-  chop: { label: 'Chop', title: 'Chop on a board', body: ['Put food on a cutting board (on the middle island) and tap ', kbd('F'), ' until it’s done. Cooked rice becomes sushi rice; fish, lobster and nori need chopping too.'] },
-  build: { label: 'Plate up', title: 'Build the dish', body: ['Set the plate on the middle of the island, then bring each finished ingredient to it and press ', kbd('E'), '. The ticket top-left says what goes on.'] },
-  serve: { label: 'Serve', title: 'Serve it', body: ['Carry the finished plate to the hatch at the front and press ', kbd('E'), '. A right dish scores, and a Mischief pip lights up.'] },
+const grabKey = (): HTMLElement => key('E', 'Grab');
+const SKILLS: Record<Skill, { label: string; title: string; body: () => (Node | string)[] }> = {
+  plate: { label: 'Plate', title: 'Grab a plate', body: () => ['Plates stack on the rack by the right wall (the yellow arrow). Walk up to it and ', press(), grabKey(), ...(isTouch() ? ['.'] : [' (or ', kbd('Space'), ').'])] },
+  grab: { label: 'Ingredient', title: 'Grab an ingredient', body: () => ['Walk up to the crate the yellow arrow points at and ', press(), grabKey(), ' to pick it up. You carry one thing at a time.'] },
+  heat: { label: 'Cook', title: 'Cook it', body: () => ['Raw rice goes in the rice cooker; sliced fish or lobster in the pan. ', isTouch() ? 'Tap ' : 'Press ', grabKey(), ' at the station. It cooks by itself. Take it off before it burns.'] },
+  chop: { label: 'Chop', title: 'Chop on a board', body: () => ['Put food on a cutting board (on the middle island) and tap ', key('F', 'Chop'), ' until it’s done. Cooked rice becomes sushi rice; fish, lobster and nori need chopping too.'] },
+  build: { label: 'Plate up', title: 'Build the dish', body: () => ['Set the plate on the middle of the island, then bring each finished ingredient to it and ', press(), grabKey(), '. The ticket top-left says what goes on.'] },
+  serve: { label: 'Serve', title: 'Serve it', body: () => ['Carry the finished plate to the hatch at the front and ', press(), grabKey(), '. A right dish scores, and a Mischief pip lights up.'] },
 };
 const SKILL_ORDER: Skill[] = ['plate', 'grab', 'heat', 'chop', 'build', 'serve'];
 
-interface Stage { title: string; body: (Node | string)[]; flag?: Flag; tour?: string; kitchen?: boolean }
+interface Stage { title: string; body: () => (Node | string)[]; flag?: Flag; tour?: string; kitchen?: boolean }
 
 const STAGES: Stage[] = [
-  { title: 'Walk around', flag: 'move', body: ['Move with ', kbd('W'), kbd('A'), kbd('S'), kbd('D'), ' or the arrow keys (the stick on a touch screen). The camera follows your stall.'] },
-  { title: 'Cook your first dish', flag: 'serve', kitchen: true, tour: 'orders', body: [] },
-  { title: 'Pick a target', flag: 'target', tour: 'board', body: ['Press ', kbd('Tab'), ' (or click a rival on the scoreboard) to choose who your cards hit. Their row turns red.'] },
-  { title: 'Play a card', flag: 'card', tour: 'hand', body: ['Press a number, ', kbd('1'), '–', kbd('6'), '. Dull Knife (', kbd('3'), '), Soy Slick (', kbd('4'), ') and Order Shuffle (', kbd('5'), ') cost one pip. They’ll see the effect, never who did it.'] },
-  { title: 'Spy on the street', flag: 'view', body: ['Press ', kbd('V'), ' to see all four kitchens, then ', kbd('V'), ' again to come back to yours.'] },
-  { title: 'You’re cooking', tour: 'help', body: ['Keep the tickets moving until the clock runs out. Then comes Whodunit: guess who hit you. Press ', kbd('?'), ' any time for the full rules.'] },
+  { title: 'Walk around', flag: 'move', body: () => isTouch()
+    ? ['Drag the stick at the bottom left to move. The camera follows your stall.']
+    : ['Move with ', kbd('W'), kbd('A'), kbd('S'), kbd('D'), ' or the arrow keys. The camera follows your stall.'] },
+  { title: 'Cook your first dish', flag: 'serve', kitchen: true, tour: 'orders', body: () => [] },
+  { title: 'Pick a target', flag: 'target', tour: 'board', body: () => isTouch()
+    ? ['Tap a rival on the scoreboard, or ', btn('Next ›'), ' next to 🎯 at the bottom, to choose who your cards hit. Their row turns red.']
+    : ['Press ', kbd('Tab'), ' (or click a rival on the scoreboard) to choose who your cards hit. Their row turns red.'] },
+  { title: 'Play a card', flag: 'card', tour: 'hand', body: () => isTouch()
+    ? ['Tap a lit card at the bottom. Dull, Slick and Shuffle cost one pip. They’ll see the effect, never who did it.']
+    : ['Press a number, ', kbd('1'), '–', kbd('6'), '. Dull Knife (', kbd('3'), '), Soy Slick (', kbd('4'), ') and Order Shuffle (', kbd('5'), ') cost one pip. They’ll see the effect, never who did it.'] },
+  { title: 'Spy on the street', flag: 'view', body: () => isTouch()
+    ? ['Tap ', btn('👀 Street'), ' (above Chop) to see all four kitchens, then tap it again to come back to yours.']
+    : ['Press ', kbd('V'), ' to see all four kitchens, then ', kbd('V'), ' again to come back to yours.'] },
+  { title: 'You’re cooking', tour: 'help', body: () => ['Keep the tickets moving until the clock runs out. Then comes Whodunit: guess who hit you. ', ...(isTouch() ? ['Tap ', btn('?'), ' at the top right'] : ['Press ', kbd('?')]), ' any time for the full rules.'] },
 ];
 
 /** Which skill the hint planner's next step is teaching. */
@@ -133,7 +147,7 @@ export class Walkthrough implements ShiftWatcher {
       h('div', { class: 'c-top' }, h('span', { class: 'c-step' }, `First shift · ${this.i + 1}/${STAGES.length}`), this.btn('Skip tutorial', () => this.end(), 'link')),
       h('div', { class: 'c-bar' }, h('i', { style: `width:${(this.i / (STAGES.length - 1)) * 100}%` })),
       h('h3', {}, sk ? sk.title : st.title),
-      h('p', {}, ...(sk ? sk.body : st.kitchen ? ['Your order is on the ticket, top left. Follow the yellow arrow and the line below until the dish is served.'] : st.body)),
+      h('p', {}, ...(sk ? sk.body() : st.kitchen ? ['Your order is on the ticket, top left. Follow the yellow arrow and the line below until the dish is served.'] : st.body())),
       live,
       st.kitchen ? h('ul', { class: 'c-check', 'aria-label': 'Your first dish' }, ...SKILL_ORDER.map((k) => h('li', { class: `${this.flags.has(k) ? 'ok' : ''}${k === this.skill ? ' now' : ''}` }, SKILLS[k].label))) : '',
       h('div', { class: 'c-row' },
@@ -253,7 +267,7 @@ export function howToPlay(opts: { inShift: boolean; replay: () => void; onClose?
         h('p', {}, 'Three minutes. Every chef gets the same orders in the same order, in their own stall. Serve the dish on a ticket before its bar runs out. Your tickets are top-left, the clock and scoreboard top-right, Mischief and your cards at the bottom.')),
       sec('Controls',
         h('dl', { class: 'keys' }, ...keys.flatMap(([k, v]) => [h('dt', {}, ...k.map((x) => (x === '–' ? '–' : kbd(x)))), h('dd', {}, v)])),
-        h('p', { class: 'dim small' }, 'Touch screens: the stick moves, E picks up and puts down, Chop chops; tap a card or a rival.')),
+        h('p', { class: 'dim small' }, 'Touch screens: the stick moves, Grab picks up, puts down and serves, Chop chops, 👀 Street shows every kitchen; tap a card, a rival, or Next › to switch target.')),
       sec('Cooking chains',
         h('ul', { class: 'chains' }, ...CHAINS.map(([name, steps]) => h('li', {}, h('b', {}, name), h('span', {}, steps.join(' → '))))),
         h('p', {}, 'Then: grab a plate from the rack, set it on a counter, add every ingredient on the ticket, and carry it to the hatch at the front.')),

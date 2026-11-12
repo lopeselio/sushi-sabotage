@@ -437,3 +437,5 @@ code { font-size: 12px; color: var(--dim); }
 .touch-ui .h-cycle { min-height: 40px; padding: 6px 14px; margin-left: 4px; background: var(--lantern); color: #2a1406; border-radius: 99px; font-weight: 800; font-size: 14px; }
 .touch-ui .h-aim { padding: 2px 2px 2px 10px; }
 .touch-ui .h-card .short { margin-top: 0; }
+/* an on-screen button named in the walkthrough, styled like a key */
+kbd.tap { background: var(--lantern); color: #2a1406; border-color: #ffd1a0; font-size: 12px; }
