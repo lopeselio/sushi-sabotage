@@ -27,6 +27,8 @@ export interface MatchRecord {
   txs: { what: string; hash: string }[];
   lines: SignedLine[];
   settled: boolean;
+  /** the contract freed this match's storage (prune.ts); the bundle and the events keep the record */
+  pruned?: { at: number; tx: string };
   error?: string;
 }
 
@@ -46,10 +48,12 @@ export function loadMatch(id: string): MatchRecord | null {
   try { return JSON.parse(readFileSync(join(dir, `${id}.json`), 'utf8')) as MatchRecord; } catch { return null; }
 }
 
-export function recentMatches(n = 20): MatchRecord[] {
+export function allMatches(): MatchRecord[] {
   const ids = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
-  return ids.map((id) => loadMatch(id)).filter((m): m is MatchRecord => !!m).sort((a, b) => b.createdAt - a.createdAt).slice(0, n);
+  return ids.map((id) => loadMatch(id)).filter((m): m is MatchRecord => !!m).sort((a, b) => b.createdAt - a.createdAt);
 }
+
+export const recentMatches = (n = 20): MatchRecord[] => allMatches().slice(0, n);
 
 // small key-value file for market demand and agent memory
 const kvFile = join(config.dataDir, 'kv.json');
