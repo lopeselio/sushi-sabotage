@@ -22,6 +22,19 @@ export interface CallResult<T> { value: T; tx: string }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const transient = (e: unknown): boolean => /fetch failed|ECONNRESET|ETIMEDOUT|timeout|503|502|429|InvalidNonce/i.test(String((e as Error)?.message ?? e));
+const nonceOrRateLimit = (x: unknown): boolean => /InvalidNonce|Invalid nonce|429|rate.?limit/i.test(`${(x as Error)?.constructor?.name ?? ''} ${(x as Error)?.message ?? x}`);
+/**
+ * The failover provider wraps each endpoint's error in one "Exceeded N providers" error, which hides
+ * an InvalidNonce from near-api-js's own nonce refresh: the signer's cached nonce stays behind (after
+ * someone else used the key, or a send that timed out but landed) and every later call fails. When
+ * every endpoint said "bad nonce" or "rate-limited", nothing was executed, so it's safe to drop the
+ * cached account (a fresh one reads the nonce again) and send again.
+ */
+function staleNonce(e: unknown): boolean {
+  const inner = (e as { errors?: unknown[] })?.errors;
+  if (Array.isArray(inner) && inner.length) return inner.some((x) => /InvalidNonce|Invalid nonce/.test(`${(x as Error)?.constructor?.name ?? ''} ${(x as Error)?.message ?? x}`)) && inner.every(nonceOrRateLimit);
+  return /InvalidNonce|Invalid nonce/.test(String((e as Error)?.message ?? e));
+}
 
 /** Calls a method as `signer`. Returns the decoded return value and the transaction hash. */
 export function call<T = unknown>(signer: string, method: string, args: object, gasTera = 60, depositYocto = 0n): Promise<CallResult<T>> {
@@ -40,7 +53,9 @@ export function call<T = unknown>(signer: string, method: string, args: object, 
   const guarded = async (): Promise<CallResult<T>> => {
     for (let attempt = 0; ; attempt++) {
       try { return await once(); } catch (e) {
-        if (attempt >= 3 || !transient(e)) throw e;
+        const nonce = staleNonce(e);
+        if (nonce) accounts.delete(signer);
+        if (attempt >= 3 || !(nonce || transient(e))) throw e;
         await sleep(700 * (attempt + 1));
       }
     }
