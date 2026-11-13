@@ -11,7 +11,7 @@ import { gearToArray, replay, results, rulesOf, sealOf, sha256Hex, stateHash, ty
 const args = process.argv.slice(2);
 const opt = (k: string, d: string): string => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const id = args.find((a) => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
-const HOST = opt('host', 'https://sushi.lopeselio.online');
+const HOST = opt('host', 'https://sushi-sabotage.lopeselio.online');
 const RPCS = rpcList(args.flatMap((a, i) => (a === '--rpc' && args[i + 1] ? [args[i + 1]] : [])));
 const CONTRACT = opt('contract', 'sushi-sabotage.testnet');
 if (!id) { console.error('usage: pnpm verify <matchId> [--host URL] [--rpc URL] [--contract ID]'); process.exit(2); }

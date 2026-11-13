@@ -13,7 +13,7 @@ Built for NEAR HACKATHON (Nov 2026). Tracks: **Games With Real Economies**, **Pr
 
 ## Try it (do X, see Y)
 
-Hosted demo: **https://sushi.lopeselio.online/** (Azure Container Apps), also in the NEAR Arcade at https://arcade.lopeselio.online/. Health: [`/api/status`](https://sushi.lopeselio.online/api/status) shows the deployed version, the contract's free storage NEAR and how long it lasts, and every agent's balance; `warnings` is empty when all is well. Locally:
+Hosted demo: **https://sushi-sabotage.lopeselio.online/** (Azure Container Apps), also in the NEAR Arcade at https://arcade.lopeselio.online/. Health: [`/api/status`](https://sushi-sabotage.lopeselio.online/api/status) shows the deployed version, the contract's free storage NEAR and how long it lasts, and every agent's balance; `warnings` is empty when all is well. Locally:
 
 ```bash
 pnpm install
@@ -56,7 +56,7 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    - every seal and its opening (salt included), and the accusations;
    - the signed NEAR AI lines.
 
-   Check any finished match yourself with no keys: `pnpm verify <matchId>` (after `pnpm install`). It fetches the bundle from the hosted game and the contract's record, then checks the seed against its committed hash, every seal against its opening, re-runs the shift from the input log, and compares the final scores with the contract. A known-good hosted match, a guest solo shift settled on 2026-11-12 (run against https://sushi.lopeselio.online the same day):
+   Check any finished match yourself with no keys: `pnpm verify <matchId>` (after `pnpm install`). It fetches the bundle from the hosted game and the contract's record, then checks the seed against its committed hash, every seal against its opening, re-runs the shift from the input log, and compares the final scores with the contract. A known-good hosted match, a guest solo shift settled on 2026-11-12 (run against https://sushi-sabotage.lopeselio.online the same day):
 
    ```
    $ pnpm verify m-mwdktpbw-5271a2
@@ -80,7 +80,7 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
    all checks passed
    ```
 
-   - Any other match: pick an id from [`/api/matches`](https://sushi.lopeselio.online/api/matches) (the 20 newest; the AI league adds one every 15 minutes) or from a results screen.
+   - Any other match: pick an id from [`/api/matches`](https://sushi-sabotage.lopeselio.online/api/matches) (the 20 newest; the AI league adds one every 15 minutes) or from a results screen.
    - RPCs: the contract is read through intea, drpc and fastnear in turn; a rate-limited endpoint (429) is skipped and the list retried after a pause. `--rpc https://…` puts your own endpoint first (repeat it or comma-separate several). If nothing answers you get one line naming each endpoint tried. Other options: `--host` (default the hosted game), `--contract`.
    - AI-league rounds are pruned from contract storage 12 h after they start (see "Deploying"); verifying an older league round says so and links its transactions. Player shifts are never pruned.
 7. **Multiplayer.**
@@ -122,7 +122,7 @@ What each NEAR technology does in Sushi Sabotage, and where to look. Each GIF is
 | NEAR smart contracts (Rust, near-sdk 5.29) | the kitchen contract: the seed committed at `create_match`, sabotage seals during the shift, `settle_match` checking every opening, `prune_matches` for old league rounds | [`contracts/kitchen`](contracts/kitchen/src/lib.rs), [`sushi-sabotage.testnet`](https://testnet.nearblocks.io/address/sushi-sabotage.testnet), referee [`sushi-sabotage-ref.testnet`](https://testnet.nearblocks.io/address/sushi-sabotage-ref.testnet) |
 | NEP-171 NFTs, NEP-245 multi tokens | chef NFTs that hold their own purse, cards and record; recipe scrolls with purses; sabotage cards as NEP-245 tokens; upgrades and energy paid in NEAR | [`lib.rs`](contracts/kitchen/src/lib.rs), [`mt.rs`](contracts/kitchen/src/mt.rs), [`econ.rs`](contracts/kitchen/src/econ.rs) |
 | NEAR accounts and function-call keys | AI chefs, the Fixer and the Scout are sub-accounts the contract creates, each with one function-call key and contract spending caps | `create_agent_account`, `register_agent` in [`lib.rs`](contracts/kitchen/src/lib.rs), [`agents.ts`](apps/server/src/agents.ts), [`budget.ts`](apps/server/src/budget.ts) |
-| NEAR AI Cloud | the Fixer's haggling and the AI chefs' taunts, from a TEE-hosted model, each line kept with the enclave's signature | [`nearai.ts`](apps/server/src/nearai.ts), [`/api/attestation`](https://sushi.lopeselio.online/api/attestation) |
+| NEAR AI Cloud | the Fixer's haggling and the AI chefs' taunts, from a TEE-hosted model, each line kept with the enclave's signature | [`nearai.ts`](apps/server/src/nearai.ts), [`/api/attestation`](https://sushi-sabotage.lopeselio.online/api/attestation) |
 | NEP-413 sign-in, NEP-366 meta-transactions | wallet sign-in (Better Auth + better-near-auth); a gasless chef mint, faucet, ranked approval and card purchase through `sushi-sabotage-relay.testnet` | [`apps/web/src/wallet.ts`](apps/web/src/wallet.ts), [`apps/server/src/ba.ts`](apps/server/src/ba.ts) |
 
 ### NEAR smart contracts: sealed sabotage
@@ -147,7 +147,7 @@ A chef NFT is the player's account: its purse, card inventory, stats and best sc
 
 <img src="media/stack/near-ai.gif" alt="Diagram: the game server asks NEAR AI Cloud's TEE-hosted Qwen model for an AI chef's taunt or the Fixer's reply, while packages/rules sets the card price; every line goes into the match's proof bundle with its exact bytes and the enclave's signature, /api/attestation returns a fresh nonce-bound report, and pnpm verify counts the signed lines." width="100%">
 
-The AI chefs' taunts and the Fixer's lines come from `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud ([`nearai.ts`](apps/server/src/nearai.ts)), kept with their exact request and response bytes and the enclave's signature in the match's proof bundle. The price comes from [`market.ts`](packages/rules/src/market.ts), never from the model, and the model never moves a chef or picks a target. [`/api/attestation`](https://sushi.lopeselio.online/api/attestation) returns a fresh attestation report bound to a nonce.
+The AI chefs' taunts and the Fixer's lines come from `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud ([`nearai.ts`](apps/server/src/nearai.ts)), kept with their exact request and response bytes and the enclave's signature in the match's proof bundle. The price comes from [`market.ts`](packages/rules/src/market.ts), never from the model, and the model never moves a chef or picks a target. [`/api/attestation`](https://sushi-sabotage.lopeselio.online/api/attestation) returns a fresh attestation report bound to a nonce.
 
 ### Wallet sign-in and gasless mints: NEP-413 and NEP-366
 
