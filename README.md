@@ -113,6 +113,54 @@ Without NEAR keys, run `CHAIN=0 pnpm start`. Everything plays the same, but noth
 
    Each receipt links its transaction. A league result (winner, pot) is listed only once `settle_match` went through. An action that failed onchain is marked **✗** with the reason in words (for example "the contract is out of storage NEAR"), and nothing was spent or won. If the contract is short of storage NEAR, a warning sits above the receipts.
 
+## Built on NEAR
+
+What each NEAR technology does in Sushi Sabotage, and where to look. Each GIF is a short loop (12 seconds or less).
+
+| Technology | What Sushi Sabotage uses it for | Where to look |
+|---|---|---|
+| NEAR smart contracts (Rust, near-sdk 5.29) | the kitchen contract: the seed committed at `create_match`, sabotage seals during the shift, `settle_match` checking every opening, `prune_matches` for old league rounds | [`contracts/kitchen`](contracts/kitchen/src/lib.rs), [`sushi-sabotage.testnet`](https://testnet.nearblocks.io/address/sushi-sabotage.testnet), referee [`sushi-sabotage-ref.testnet`](https://testnet.nearblocks.io/address/sushi-sabotage-ref.testnet) |
+| NEP-171 NFTs, NEP-245 multi tokens | chef NFTs that hold their own purse, cards and record; recipe scrolls with purses; sabotage cards as NEP-245 tokens; upgrades and energy paid in NEAR | [`lib.rs`](contracts/kitchen/src/lib.rs), [`mt.rs`](contracts/kitchen/src/mt.rs), [`econ.rs`](contracts/kitchen/src/econ.rs) |
+| NEAR accounts and function-call keys | AI chefs, the Fixer and the Scout are sub-accounts the contract creates, each with one function-call key and contract spending caps | `create_agent_account`, `register_agent` in [`lib.rs`](contracts/kitchen/src/lib.rs), [`agents.ts`](apps/server/src/agents.ts), [`budget.ts`](apps/server/src/budget.ts) |
+| NEAR AI Cloud | the Fixer's haggling and the AI chefs' taunts, from a TEE-hosted model, each line kept with the enclave's signature | [`nearai.ts`](apps/server/src/nearai.ts), [`/api/attestation`](https://sushi.lopeselio.online/api/attestation) |
+| NEP-413 sign-in, NEP-366 meta-transactions | wallet sign-in (Better Auth + better-near-auth); a gasless chef mint, faucet, ranked approval and card purchase through `sushi-sabotage-relay.testnet` | [`apps/web/src/wallet.ts`](apps/web/src/wallet.ts), [`apps/server/src/ba.ts`](apps/server/src/ba.ts) |
+
+### NEAR smart contracts: sealed sabotage
+
+<img src="media/stack/contract.gif" alt="Diagram: the referee sushi-sabotage-ref.testnet calls create_match on sushi-sabotage.testnet, which stores the hash of the shift's seed; each sabotage card cast becomes a sha256 seal posted with seal every few seconds; settle_match checks the seed and every opening, scores the accusations and pays out, and prune_matches frees AI-league rounds after 12 hours." width="100%">
+
+One Rust contract, [`sushi-sabotage.testnet`](https://testnet.nearblocks.io/address/sushi-sabotage.testnet), records every match. `create_match` stores `sha256(seed)` with the seats, fees, cards and gear; during the shift the referee posts each card cast as `sha256(match|caster|target|card|tick|salt)` with `seal` ([`match.ts`](apps/server/src/match.ts)). `settle_match` refuses unless the seed matches its hash and every seal is opened in order, then scores the accusations itself and pays out ([`lib.rs`](contracts/kitchen/src/lib.rs)); `prune_matches` frees AI-league rounds 12 hours after they start ([`prune.ts`](apps/server/src/prune.ts)). `pnpm verify <matchId>` checks a match against the contract with no keys.
+
+### NEP-171 and NEP-245: chefs that hold their purse
+
+<img src="media/stack/nfts.gif" alt="Diagram: you mint a Chef NFT (NEP-171) that holds its purse, cards, stats, level, energy and upgrades, and nft_transfer moves all of it; the Fixer posts an offer for a NEP-245 sabotage card that lands in the chef's inventory and is burned when brought to a match; upgrades and energy packs are bought with NEAR into the contract treasury." width="100%">
+
+A chef NFT is the player's account: its purse, card inventory, stats and best score live on the token, its metadata (an SVG card) is generated from that state on every read, and `nft_transfer` moves all of it ([`lib.rs`](contracts/kitchen/src/lib.rs)). Sabotage cards are NEP-245 tokens whose balance is the chef's inventory ([`mt.rs`](contracts/kitchen/src/mt.rs)); the 20 recipe scrolls have purses of their own and earn royalties in ranked matches. `buy_upgrade` and `buy_energy` take NEAR into the treasury counted by `get_economy` ([`econ.rs`](contracts/kitchen/src/econ.rs)).
+
+### Agent accounts: AI chefs with their own keys
+
+<img src="media/stack/agents.gif" alt="Diagram: sushi-sabotage.testnet creates kenji.sushi-sabotage.testnet with create_agent_account, whose only key can call post_offer, accept_offer, buy_scout, approve_referee and claim_daily; register_agent caps its spending at 150 ryo a day and 10 a match; every 10 minutes Kenji buys a card from the Fixer and pays Scout Nori 5 ryo for a report on the leader." width="100%">
+
+`create_agent_account` makes `kenji`, `mei`, `hana`, `tomo`, `fixer` and `scout` sub-accounts of the contract whose only key is a function-call key for five methods; they can't move NEAR or call other contracts. `register_agent` puts each chef under caps that `spend()` checks on every purchase and entry fee, and the server paces the budget ([`budget.ts`](apps/server/src/budget.ts)). On their own, the agents claim the faucet, buy cards and pay the Scout ([`agents.ts`](apps/server/src/agents.ts)).
+
+### NEAR AI Cloud: signed taunts and haggling
+
+<img src="media/stack/near-ai.gif" alt="Diagram: the game server asks NEAR AI Cloud's TEE-hosted Qwen model for an AI chef's taunt or the Fixer's reply, while packages/rules sets the card price; every line goes into the match's proof bundle with its exact bytes and the enclave's signature, /api/attestation returns a fresh nonce-bound report, and pnpm verify counts the signed lines." width="100%">
+
+The AI chefs' taunts and the Fixer's lines come from `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud ([`nearai.ts`](apps/server/src/nearai.ts)), kept with their exact request and response bytes and the enclave's signature in the match's proof bundle. The price comes from [`market.ts`](packages/rules/src/market.ts), never from the model, and the model never moves a chef or picks a target. [`/api/attestation`](https://sushi.lopeselio.online/api/attestation) returns a fresh attestation report bound to a nonce.
+
+### Wallet sign-in and gasless mints: NEP-413 and NEP-366
+
+<img src="media/stack/wallet.gif" alt="Diagram: a NEAR wallet signs a NEP-413 message that better-near-auth checks to start a session; a signed delegate action for a chef mint goes to sushi-sabotage-relay.testnet, which pays the gas and relays only to sushi-sabotage.testnet with no deposit; upgrades and energy attach NEAR, so they are ordinary wallet transactions." width="100%">
+
+Sign-in is Better Auth with better-near-auth ([`ba.ts`](apps/server/src/ba.ts), [`wallet.ts`](apps/web/src/wallet.ts)): the wallet signs "Sign in to <this host>" and the server sets a session. Minting a chef, the faucet, ranked approval and buying a card go out as NEP-366 delegate actions that `sushi-sabotage-relay.testnet` submits, only to the kitchen contract and never with a deposit. Upgrades and energy attach NEAR, so the wallet sends them as normal transactions; gameplay never touches the wallet.
+
+### The rest of the stack
+
+<img src="media/stack/stack.gif" alt="Diagram: the three.js web app talks to the Node server over WebSocket and /api, the server reads and writes NEAR testnet over public RPC, packages/rules is the deterministic sim shared by the browser, server and verifier, one container runs on Azure Container Apps, and tools/blender builds every 3D model." width="100%">
+
+A three.js night market built with Vite ([`apps/web`](apps/web/src/scene.ts)), a Node 22 server that runs rooms over WebSocket at 20 Hz, the referee, the agents and NEAR AI ([`apps/server`](apps/server/src/main.ts)), and [`packages/rules`](packages/rules/src/sim.ts), the deterministic sim that the browser, the server and `pnpm verify` all run. One image ([`Dockerfile`](Dockerfile)) runs on Azure Container Apps; every 3D model comes from [`tools/blender`](tools/blender/build_assets.py).
+
 ## How it works
 
 ```
