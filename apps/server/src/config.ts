@@ -15,6 +15,8 @@ export const config = {
   relayer: env('RELAYER_ID', 'sushi-sabotage-relay.testnet'),
   /** other origins allowed to talk to the auth endpoints (comma-separated) */
   extraOrigins: env('EXTRA_ORIGINS').split(',').map((x) => x.trim()).filter(Boolean),
+  /** old hostnames (comma-separated) that permanently redirect to BETTER_AUTH_URL's host, e.g. sushi-sabotage.lopeselio.online */
+  redirectFrom: env('REDIRECT_FROM').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
   /** turn chain writes off (local play with no keys) */
   chainEnabled: env('CHAIN', '1') !== '0',
   webDist: env('WEB_DIST', join(import.meta.dirname, '../../web/dist')),

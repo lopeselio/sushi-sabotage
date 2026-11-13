@@ -5,7 +5,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { CARDS, DIFFICULTIES, SHIFT_TICKS, replay, stateHash, validAccusations, type BotSkill, type Card, type LogEntry } from '@sushi/rules';
 import { ALL_AGENTS, CHEF_AGENTS, DAY_CAP, MATCH_CAP, agentBudgets, FIXER, accountOf, agentChef, agentEconomyTick, fixerOffer, haggleWithFixer, prices, recentActs, taunt } from './agents.ts';
 import { PLAYER_RESERVE, affordableRounds } from './budget.ts';
-import { BA_PATH, accountFromHeaders, authHandler } from './ba.ts';
+import { BA_PATH, accountFromHeaders, authHandler, authHost } from './ba.ts';
 import { view } from './chain.ts';
 import { config, explorerTx } from './config.ts';
 import { ChainMatch, planSeats, soloBots, type SeatPlan } from './match.ts';
@@ -106,6 +106,12 @@ setInterval(() => { const now = Date.now(); for (const [k, v] of solos) if (v.ex
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
+  // an old hostname (links already posted) moves to the current one, path and query kept
+  const host = String(req.headers.host ?? '').toLowerCase();
+  if (config.redirectFrom.includes(host) && host !== authHost) {
+    res.writeHead(301, { location: `https://${authHost}${req.url ?? '/'}` }).end();
+    return;
+  }
   try {
     // wallet sign-in, sessions and gasless relay: Better Auth + better-near-auth
     if (p === BA_PATH || p.startsWith(`${BA_PATH}/`)) { await authHandler(req, res); return; }
