@@ -413,15 +413,32 @@ function pollTxs(matchId: string, tries = 0): void {
 async function market(): Promise<void> {
   stopShift();
   page = 'market';
-  const m = await api<{ prices: Record<Card, number> }>('/market').catch(() => null);
+  const [m, fresh] = await Promise.all([api<{ prices: Record<Card, number> }>('/market').catch(() => null), me ? api<Me | null>('/me').catch(() => me) : Promise.resolve(null)]);
   if (!m) { toast('market closed', 'bad'); return; }
+  if (me) me = fresh;
+  // what the signed-in chef holds, read from the chain; redrawn after every purchase
+  const owned = (k: number): number => me?.raw?.kind.Chef?.inventory[k] ?? 0;
+  const purse = h('div', { class: 'purse' });
+  const drawHoldings = (flash?: Card): void => {
+    purse.replaceChildren(...(me?.raw ? [
+      h('span', { class: 'purse-ryo' }, h('b', {}, String(me.raw.purse)), ' ryo in your purse'),
+      h('span', { class: 'dim' }, `${CARDS.reduce((n, _c, k) => n + owned(k), 0)} cards in hand`),
+    ] : [walletBadge()]));
+    CARDS.forEach((c, k) => {
+      const tag = cards.children[k]?.querySelector('.owned');
+      if (!tag) return;
+      tag.textContent = owned(k) ? `You have ${owned(k)}` : '';
+      if (flash === c) { tag.classList.remove('pop'); void (tag as HTMLElement).offsetWidth; tag.classList.add('pop'); }
+    });
+    if (flash) { purse.classList.remove('pop'); void purse.offsetWidth; purse.classList.add('pop'); }
+  };
   let card: Card = 'wasabi_bomb';
   let round: 0 | 1 = 0;
   const chat = h('div', { class: 'chat' }, h('p', { class: 'npc' }, h('b', {}, 'The Fixer: '), 'Psst. Cards for the discerning chef. Prices move with demand. Make me an offer.'));
   const offer = h('input', { type: 'number', min: 1, value: String(m.prices[card]) });
   const said = h('input', { placeholder: 'Say something (optional)…', maxlength: 200 });
   const cards = h('div', { class: 'shop' }, ...CARDS.map((c) => h('button', { class: c === card ? 'on' : '', onclick: (e: Event) => { card = c; round = 0; offer.value = String(m.prices[c]); [...cards.children].forEach((b) => b.classList.remove('on')); (e.currentTarget as HTMLElement).classList.add('on'); } },
-    h('b', {}, CARD_INFO[c].name), h('small', {}, CARD_INFO[c].blurb), h('span', { class: 'price' }, `${m.prices[c]} ryo`))));
+    h('b', {}, CARD_INFO[c].name), h('small', {}, CARD_INFO[c].blurb), h('span', { class: 'price' }, `${m.prices[c]} ryo`), h('span', { class: 'owned' }))));
   const say = (who: string, text: string, cls = 'npc'): void => { chat.append(h('p', { class: cls }, h('b', {}, `${who}: `), text)); chat.scrollTop = chat.scrollHeight; };
   const haggle = async (): Promise<void> => {
     if (!me) { toast('Sign in with a NEAR wallet to buy cards', 'bad'); return; }
@@ -437,7 +454,14 @@ async function market(): Promise<void> {
         say('Wallet', 'Approve the purchase in your wallet (no gas: the game relays it).', 'sys');
         const res = await call('accept_offer', { offer_id: r.offer.offerId });
         say('Receipt', `You bought ${CARD_INFO[card].name} for ${r.outcome.price} ryo${res.gasless ? ', gas paid by the game' : ''}. Tx ${res.tx.slice(0, 10)}…`, 'sys');
-        me = await api<Me | null>('/me');
+        // the chain view can trail the receipt by a block: read until the purse moves
+        const before = me?.raw?.purse;
+        for (let i = 0; i < 6; i++) {
+          me = await api<Me | null>('/me').catch(() => me);
+          if (me?.raw?.purse !== before) break;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        drawHoldings(card);
         round = 0;
       }
     } catch (e) { say('Error', (e as Error).message, 'sys'); }
@@ -445,8 +469,8 @@ async function market(): Promise<void> {
   mount(ui, nav(), h('div', { class: 'panel market' },
     h('h2', {}, 'Night Market'),
     h('p', { class: 'dim' }, 'The Fixer is an AI agent with its own NEAR account. The rules set every price (demand raises it, it decays over an hour); the TEE-hosted model only does the talking. 🔏 = reply signed by the enclave.'),
-    cards, chat, h('div', { class: 'row' }, offer, said, h('button', { class: 'big', onclick: haggle }, 'Offer')),
-    me?.raw ? h('p', { class: 'dim' }, `Purse: ${me.raw.purse} ryo · cards: ${CARDS.map((c, k) => `${CARD_INFO[c].name} ${me!.raw!.kind.Chef?.inventory[k] ?? 0}`).join(', ')}`) : walletBadge()));
+    purse, cards, chat, h('div', { class: 'row' }, offer, said, h('button', { class: 'big', onclick: haggle }, 'Offer'))));
+  drawHoldings();
 }
 
 // ---------- my chef (the NFT) ----------
