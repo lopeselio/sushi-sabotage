@@ -205,7 +205,7 @@ Sabotage cards are NEP-245 multi-tokens over chef inventories: an account's bala
 
 ## Arcade
 
-Sushi Sabotage is one of the nine games in the NEAR Arcade (https://arcade.lopeselio.online, github.com/lopeselio/near-arcade). It is a standalone app with its own URL (https://sushi.lopeselio.online), contract and repo, which the arcade links to.
+Sushi Sabotage is one of the nine games in the NEAR Arcade (https://arcade.lopeselio.online, github.com/lopeselio/near-arcade). It is a standalone app with its own URL (https://sushi-sabotage.lopeselio.online), contract and repo, which the arcade links to.
 
 ## Plan (built in this order, always playable)
 
