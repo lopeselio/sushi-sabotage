@@ -47,13 +47,14 @@ KEYS=$(node -e '
 
 # the public URL players use: the wallet signs "Sign in to <host>" for it (Better Auth)
 FQDN_NOW=$(az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
-# a bound custom domain (e.g. sushi.lopeselio.online) wins over the default Azure hostname
-CUSTOM_NOW=$(az containerapp hostname list -g "$RG" -n "$APP" --query "[0].name" -o tsv 2>/dev/null || true)
+# a bound custom domain (e.g. sushi-sabotage.lopeselio.online) wins over the default Azure hostname
+# (skipping hostnames in REDIRECT_FROM, which only redirect to the current one)
+CUSTOM_NOW=$(az containerapp hostname list -g "$RG" -n "$APP" --query "[].name" -o tsv 2>/dev/null | grep -v -x -F -f <(tr ',' '\n' <<<"${REDIRECT_FROM:-}" | grep .) | head -1 || true)
 PUBLIC_URL=${PUBLIC_URL:-${CUSTOM_NOW:+https://$CUSTOM_NOW}}
 PUBLIC_URL=${PUBLIC_URL:-${FQDN_NOW:+https://$FQDN_NOW}}
 
 az containerapp env show -g "$RG" -n "$ENV_NAME" -o none 2>/dev/null || az containerapp env create -g "$RG" -n "$ENV_NAME" -l "$LOC" -o none
-ENVS=(NEAR_NETWORK=testnet DATA_DIR=/data "CONTRACT_ID=$CONTRACT" "REFEREE_ID=$REFEREE" "RELAYER_ID=$RELAYER" ${PUBLIC_URL:+"BETTER_AUTH_URL=$PUBLIC_URL"} "NEARAI_BASE_URL=${NEARAI_BASE_URL:-https://cloud-api.near.ai/v1}" "NEARAI_MODEL=${NEARAI_MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}" NEAR_KEYS=secretref:near-keys NEARAI_API_KEY=secretref:nearai-key SESSION_SECRET=secretref:session-secret)
+ENVS=(NEAR_NETWORK=testnet DATA_DIR=/data "CONTRACT_ID=$CONTRACT" "REFEREE_ID=$REFEREE" "RELAYER_ID=$RELAYER" ${PUBLIC_URL:+"BETTER_AUTH_URL=$PUBLIC_URL"} ${REDIRECT_FROM:+"REDIRECT_FROM=$REDIRECT_FROM"} "NEARAI_BASE_URL=${NEARAI_BASE_URL:-https://cloud-api.near.ai/v1}" "NEARAI_MODEL=${NEARAI_MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}" NEAR_KEYS=secretref:near-keys NEARAI_API_KEY=secretref:nearai-key SESSION_SECRET=secretref:session-secret)
 if az containerapp show -g "$RG" -n "$APP" -o none 2>/dev/null; then
   az containerapp secret set -g "$RG" -n "$APP" --secrets "near-keys=$KEYS" "nearai-key=${NEARAI_API_KEY:-none}" "session-secret=${SESSION_SECRET:?set SESSION_SECRET in .env}" -o none
   az containerapp update -g "$RG" -n "$APP" --image "$IMAGE" --set-env-vars "${ENVS[@]}" -o none
