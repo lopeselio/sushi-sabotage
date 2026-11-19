@@ -7,7 +7,7 @@ import { chefCard, chefSlot, resultsCta, type ChefHooks } from './chef.ts';
 import { Walkthrough, howToPlay, onboarded, tutorialDone, welcome } from './onboarding.ts';
 import { CHEF_COLORS, KitchenScene } from './scene.ts';
 import { $, h, modalOpen, mount, saved, toast } from './ui.ts';
-import { call, setContract, signIn, signOut } from './wallet.ts';
+import { call, dismissed, setContract, signIn, signOut } from './wallet.ts';
 
 const ui = $('#ui');
 const hud = $('#hud');
@@ -135,7 +135,7 @@ async function doSignIn(): Promise<void> {
     if (!me) throw new Error('signed in, but the session cookie did not stick: allow cookies for this site and try again');
     toast(`Signed in as ${me.accountId}`, 'good');
     if (!me.chef) myChef(); else title();
-  } catch (e) { toast((e as Error).message, 'bad'); }
+  } catch (e) { if (!dismissed(e)) toast((e as Error).message, 'bad'); }
 }
 
 // ---------- title ----------
